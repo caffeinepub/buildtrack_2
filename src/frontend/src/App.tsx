@@ -7,13 +7,9 @@ import {
   LogIn,
   LogOut,
 } from "lucide-react";
-import {
-  BrowserRouter,
-  NavLink,
-  Route,
-  Routes,
-  useNavigate,
-} from "react-router-dom";
+import { useState } from "react";
+import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import SplashScreen from "./components/SplashScreen";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import Dashboard from "./pages/Dashboard";
 import ProjectDetail from "./pages/ProjectDetail";
@@ -90,19 +86,26 @@ function Nav() {
 }
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
-    <BrowserRouter>
-      <div className="flex min-h-screen">
-        <Nav />
-        <main className="ml-56 flex-1 min-h-screen bg-background">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/projects" element={<Projects />} />
-            <Route path="/projects/:id" element={<ProjectDetail />} />
-          </Routes>
-        </main>
-      </div>
-      <Toaster />
-    </BrowserRouter>
+    <>
+      {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
+      {!showSplash && (
+        <BrowserRouter>
+          <div className="flex min-h-screen">
+            <Nav />
+            <main className="ml-56 flex-1 min-h-screen bg-background">
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/projects" element={<Projects />} />
+                <Route path="/projects/:id" element={<ProjectDetail />} />
+              </Routes>
+            </main>
+          </div>
+          <Toaster />
+        </BrowserRouter>
+      )}
+    </>
   );
 }

@@ -1,25 +1,22 @@
 # BuildTrack
 
 ## Current State
-Dashboard shows stat cards (active/planning/completed/on-hold counts), a budget summary with progress bars, and a grid of project cards. No charts exist yet.
+The app has a sidebar navigation, authentication via Internet Identity, and pages for Dashboard, Projects, and ProjectDetail. The app renders immediately with no intro screen.
 
 ## Requested Changes (Diff)
 
 ### Add
-- A "Project Progress" charts section on the dashboard with:
-  - A bar chart showing budget vs. actual spent per project
-  - A donut/pie chart showing project status distribution (active, planning, completed, on hold)
+- SplashScreen component that shows on app start for ~2.5 seconds before fading out
+- Company logo image (/assets/generated/buildtrack-logo-transparent.dim_200x200.png)
+- Company name "BuildTrack" in large bold text
+- Short description: "Construction Project Management"
 
 ### Modify
-- Dashboard.tsx: add a charts section below the budget summary cards, using data already fetched (stats + allProjects + their summaries)
+- App.tsx to show SplashScreen first, then render the main app after the splash completes
 
 ### Remove
-- Nothing removed
+- Nothing
 
 ## Implementation Plan
-1. Install/use recharts via the existing `ChartContainer` from `@/components/ui/chart` (already available)
-2. In Dashboard.tsx, build two chart cards:
-   - `BudgetBarChart`: fetches all projects (all statuses) and their summaries to render a grouped bar chart (Budget vs Spent per project name)
-   - `StatusDonutChart`: uses stats counts to render a pie/donut chart of project status distribution
-3. Place charts section between budget summary and project cards grid
-4. Apply deterministic `data-ocid` markers to chart containers
+1. Create `SplashScreen.tsx` component with logo, company name, and description. Animate in on mount, animate out after ~2s, calls onDone callback.
+2. Add `showSplash` state to App. Render SplashScreen when true, main app when false.
