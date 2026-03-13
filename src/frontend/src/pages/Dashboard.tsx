@@ -9,6 +9,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   Building2,
   CheckCircle2,
@@ -17,7 +18,6 @@ import {
   PauseCircle,
   TrendingUp,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import {
   Bar,
   BarChart,
@@ -30,7 +30,7 @@ import {
 } from "recharts";
 import { ProjectStatus } from "../backend";
 import { useActor } from "../hooks/useActor";
-import { formatCurrency, formatDate } from "../lib/utils";
+import { formatCurrency, formatDate } from "../lib/appUtils";
 
 const _STATUS_COLORS = {
   Active: "var(--color-active)",
@@ -316,10 +316,10 @@ export default function Dashboard() {
                   <YAxis
                     tickFormatter={(v) =>
                       v >= 1000000
-                        ? `$${(v / 1000000).toFixed(1)}M`
+                        ? `Tsh ${(v / 1000000).toFixed(1)}M`
                         : v >= 1000
-                          ? `$${(v / 1000).toFixed(0)}K`
-                          : `$${v}`
+                          ? `Tsh ${(v / 1000).toFixed(0)}K`
+                          : `Tsh ${v}`
                     }
                     tick={{ fontSize: 10 }}
                     tickLine={false}
@@ -509,7 +509,7 @@ function ProjectCard({
   };
 
   return (
-    <Link to={`/projects/${project.id}`}>
+    <Link to="/projects/$id" params={{ id: project.id.toString() }}>
       <Card
         data-ocid={`projects.item.${index}`}
         className="shadow-card hover:shadow-md transition-shadow cursor-pointer"

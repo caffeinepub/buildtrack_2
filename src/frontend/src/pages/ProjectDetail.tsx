@@ -29,6 +29,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Calendar,
@@ -42,7 +43,6 @@ import {
   Users,
 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import {
   type CostEntry,
@@ -59,7 +59,7 @@ import {
   formatDate,
   nowNs,
   nsToDateInput,
-} from "../lib/utils";
+} from "../lib/appUtils";
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   [ProjectStatus.active]: "Active",
@@ -69,7 +69,7 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
 };
 
 export default function ProjectDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams({ strict: false }) as { id?: string };
   const projectId = BigInt(id ?? "0");
   const navigate = useNavigate();
   const { actor } = useActor();
@@ -112,7 +112,7 @@ export default function ProjectDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Project deleted");
-      navigate("/projects");
+      navigate({ to: "/projects" });
     },
   });
 
@@ -136,7 +136,7 @@ export default function ProjectDetail() {
     <div data-ocid="project.detail.page" className="p-8">
       <button
         type="button"
-        onClick={() => navigate(-1)}
+        onClick={() => window.history.back()}
         className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
       >
         <ArrowLeft className="w-4 h-4" /> Back
@@ -389,7 +389,7 @@ function EditProjectDialog({
                 />
               </div>
               <div>
-                <Label>Budget ($)</Label>
+                <Label>Budget (Tsh)</Label>
                 <Input
                   data-ocid="project.edit.budget.input"
                   type="number"
@@ -999,7 +999,7 @@ function MaterialsTab({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Unit Cost ($)</Label>
+                <Label>Unit Cost (Tsh)</Label>
                 <Input
                   data-ocid="material.unitcost.input"
                   type="number"
@@ -1348,7 +1348,7 @@ function BudgetTab({
               />
             </div>
             <div>
-              <Label>Amount ($)</Label>
+              <Label>Amount (Tsh)</Label>
               <Input
                 data-ocid="cost.amount.input"
                 type="number"

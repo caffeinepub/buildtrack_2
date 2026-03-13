@@ -18,14 +18,14 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Calendar, MapPin, Plus, Search } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { type Project, ProjectStatus } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { dateToNs, formatCurrency, formatDate, nowNs } from "../lib/utils";
+import { dateToNs, formatCurrency, formatDate, nowNs } from "../lib/appUtils";
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   [ProjectStatus.active]: "Active",
@@ -185,7 +185,11 @@ export default function Projects() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filtered.map((project, i) => (
-            <Link key={project.id.toString()} to={`/projects/${project.id}`}>
+            <Link
+              key={project.id.toString()}
+              to="/projects/$id"
+              params={{ id: project.id.toString() }}
+            >
               <Card
                 data-ocid={`projects.item.${i + 1}`}
                 className="shadow-card hover:shadow-md transition-shadow cursor-pointer h-full"
@@ -273,7 +277,7 @@ export default function Projects() {
                 />
               </div>
               <div>
-                <Label htmlFor="proj-budget">Budget ($) *</Label>
+                <Label htmlFor="proj-budget">Budget (Tsh) *</Label>
                 <Input
                   id="proj-budget"
                   data-ocid="project.budget.input"
