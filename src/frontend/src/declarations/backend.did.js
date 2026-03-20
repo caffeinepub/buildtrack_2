@@ -55,6 +55,15 @@ export const Material = IDL.Record({
   'quantity' : IDL.Float64,
   'unitCost' : IDL.Float64,
 });
+export const ExternalBlob = IDL.Vec(IDL.Nat8);
+export const ProjectPhoto = IDL.Record({
+  'id' : IDL.Nat,
+  'description' : IDL.Text,
+  'dateUploaded' : Time,
+  'imageUrl' : ExternalBlob,
+  'projectId' : IDL.Nat,
+  'reportId' : IDL.Nat,
+});
 export const UserRole = IDL.Variant({
   'admin' : IDL.Null,
   'user' : IDL.Null,
@@ -78,7 +87,9 @@ export const Project = IDL.Record({
   'estimatedDurationDays' : IDL.Float64,
   'status' : ProjectStatus,
   'endDate' : Time,
+  'clientName' : IDL.Text,
   'name' : IDL.Text,
+  'createdAt' : Time,
   'description' : IDL.Text,
   'currentProgressPercentage' : IDL.Float64,
   'stage' : ProjectStage,
@@ -141,6 +152,7 @@ export const idlService = IDL.Service({
   'addCostEntry' : IDL.Func([CostEntry], [IDL.Nat], []),
   'addLabour' : IDL.Func([Labour], [IDL.Nat], []),
   'addMaterial' : IDL.Func([Material], [IDL.Nat], []),
+  'addProjectPhoto' : IDL.Func([ProjectPhoto], [IDL.Nat], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'createProject' : IDL.Func([Project], [IDL.Nat], []),
   'createReport' : IDL.Func([DailySiteReport], [IDL.Nat], []),
@@ -149,6 +161,7 @@ export const idlService = IDL.Service({
   'deleteLabour' : IDL.Func([IDL.Nat], [], []),
   'deleteMaterial' : IDL.Func([IDL.Nat], [], []),
   'deleteProject' : IDL.Func([IDL.Nat], [], []),
+  'deleteProjectPhoto' : IDL.Func([IDL.Nat], [], []),
   'deleteReport' : IDL.Func([IDL.Nat], [], []),
   'getAllProjectCostSummaries' : IDL.Func(
       [],
@@ -186,6 +199,11 @@ export const idlService = IDL.Service({
   'getProjectCostSummary' : IDL.Func(
       [IDL.Nat],
       [IDL.Opt(ProjectCostSummary)],
+      ['query'],
+    ),
+  'getProjectPhotosByProject' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Vec(ProjectPhoto)],
       ['query'],
     ),
   'getProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
@@ -259,6 +277,15 @@ export const idlFactory = ({ IDL }) => {
     'quantity' : IDL.Float64,
     'unitCost' : IDL.Float64,
   });
+  const ExternalBlob = IDL.Vec(IDL.Nat8);
+  const ProjectPhoto = IDL.Record({
+    'id' : IDL.Nat,
+    'description' : IDL.Text,
+    'dateUploaded' : Time,
+    'imageUrl' : ExternalBlob,
+    'projectId' : IDL.Nat,
+    'reportId' : IDL.Nat,
+  });
   const UserRole = IDL.Variant({
     'admin' : IDL.Null,
     'user' : IDL.Null,
@@ -282,7 +309,9 @@ export const idlFactory = ({ IDL }) => {
     'estimatedDurationDays' : IDL.Float64,
     'status' : ProjectStatus,
     'endDate' : Time,
+    'clientName' : IDL.Text,
     'name' : IDL.Text,
+    'createdAt' : Time,
     'description' : IDL.Text,
     'currentProgressPercentage' : IDL.Float64,
     'stage' : ProjectStage,
@@ -345,6 +374,7 @@ export const idlFactory = ({ IDL }) => {
     'addCostEntry' : IDL.Func([CostEntry], [IDL.Nat], []),
     'addLabour' : IDL.Func([Labour], [IDL.Nat], []),
     'addMaterial' : IDL.Func([Material], [IDL.Nat], []),
+    'addProjectPhoto' : IDL.Func([ProjectPhoto], [IDL.Nat], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'createProject' : IDL.Func([Project], [IDL.Nat], []),
     'createReport' : IDL.Func([DailySiteReport], [IDL.Nat], []),
@@ -353,6 +383,7 @@ export const idlFactory = ({ IDL }) => {
     'deleteLabour' : IDL.Func([IDL.Nat], [], []),
     'deleteMaterial' : IDL.Func([IDL.Nat], [], []),
     'deleteProject' : IDL.Func([IDL.Nat], [], []),
+    'deleteProjectPhoto' : IDL.Func([IDL.Nat], [], []),
     'deleteReport' : IDL.Func([IDL.Nat], [], []),
     'getAllProjectCostSummaries' : IDL.Func(
         [],
@@ -394,6 +425,11 @@ export const idlFactory = ({ IDL }) => {
     'getProjectCostSummary' : IDL.Func(
         [IDL.Nat],
         [IDL.Opt(ProjectCostSummary)],
+        ['query'],
+      ),
+    'getProjectPhotosByProject' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Vec(ProjectPhoto)],
         ['query'],
       ),
     'getProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),

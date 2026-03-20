@@ -19,13 +19,19 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Calendar, MapPin, Plus, Search } from "lucide-react";
+import { Calendar, MapPin, Pencil, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { type Project, ProjectStage, ProjectStatus } from "../backend";
 import { useAuth } from "../contexts/AuthContext";
 import { useActor } from "../hooks/useActor";
-import { dateToNs, formatCurrency, formatDate, nowNs } from "../lib/appUtils";
+import {
+  dateToNs,
+  formatCurrency,
+  formatDate,
+  nowNs,
+  nsToDateInput,
+} from "../lib/appUtils";
 import {
   TIMELINE_STATUS_CLASSES,
   TIMELINE_STATUS_LABELS,
@@ -65,6 +71,7 @@ const STAGE_COLORS: Record<ProjectStage, string> = {
 
 type ProjectForm = {
   name: string;
+  clientName: string;
   description: string;
   location: string;
   status: ProjectStatus;
@@ -78,6 +85,7 @@ type ProjectForm = {
 
 const emptyForm = (): ProjectForm => ({
   name: "",
+  clientName: "",
   description: "",
   location: "",
   status: ProjectStatus.planning,
@@ -104,6 +112,359 @@ const ALL_STAGES = [
   ProjectStage.completed,
 ];
 
+// ── Edit Project Dialog ──────────────────────────────────────────────────────
+
+function EditProjectDialog({ project }: { project: Project }) {
+  const { actor } = useActor();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: project.name,
+    clientName: project.clientName ?? "",
+    description: project.description,
+    location: project.location,
+    status: project.status,
+    stage: project.stage,
+    budget: project.budget.toString(),
+    startDate: nsToDateInput(project.startDate),
+    endDate: nsToDateInput(project.endDate),
+    estimatedDurationDays: project.estimatedDurationDays.toString(),
+    currentProgressPercentage: project.currentProgressPercentage.toString(),
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function validate(): boolean {
+    const errs: Record<string, string> = {};
+    if (!form.name.trim()) errs.name = "Project name is required";
+    if (!form.clientName.trim()) errs.clientName = "Client name is required";
+    if (!form.location.trim()) errs.location = "Location is required";
+    if (!form.budget.trim()) {
+      errs.budget = "Contract value is required";
+    } else if (Number.isNaN(Number(form.budget)) || Number(form.budget) < 0) {
+      errs.budget = "Contract value must be a valid positive number";
+    }
+    if (!form.startDate) errs.startDate = "Start date is required";
+    if (!form.estimatedDurationDays.trim()) {
+      errs.estimatedDurationDays = "Estimated duration is required";
+    } else if (
+      Number(form.estimatedDurationDays) <= 0 ||
+      !Number.isInteger(Number(form.estimatedDurationDays))
+    ) {
+      errs.estimatedDurationDays = "Duration must be a positive whole number";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      actor!.updateProject(project.id, {
+        ...project,
+        name: form.name.trim(),
+        clientName: form.clientName.trim(),
+        description: form.description,
+        location: form.location.trim(),
+        status: form.status,
+        stage: form.stage,
+        budget: Number.parseFloat(form.budget),
+        startDate: dateToNs(form.startDate),
+        endDate: form.endDate ? dateToNs(form.endDate) : project.endDate,
+        estimatedDurationDays: Number.parseFloat(
+          form.estimatedDurationDays || "0",
+        ),
+        currentProgressPercentage: Number.parseFloat(
+          form.currentProgressPercentage || "0",
+        ),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      setOpen(false);
+      toast.success("Project updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update project. Please try again.");
+    },
+  });
+
+  function handleSave() {
+    if (validate()) mutation.mutate();
+  }
+
+  function handleOpenChange(val: boolean) {
+    setOpen(val);
+    if (!val) setErrors({});
+  }
+
+  const editStatuses = [
+    ProjectStatus.active,
+    ProjectStatus.planning,
+    ProjectStatus.completed,
+    ProjectStatus.onHold,
+  ];
+  const STATUS_LABELS_EDIT: Record<ProjectStatus, string> = {
+    [ProjectStatus.active]: "Active",
+    [ProjectStatus.planning]: "Planning",
+    [ProjectStatus.completed]: "Completed",
+    [ProjectStatus.onHold]: "On Hold",
+  };
+  const EDIT_STAGES = [
+    ProjectStage.planning,
+    ProjectStage.foundation,
+    ProjectStage.structure,
+    ProjectStage.finishing,
+    ProjectStage.completed,
+  ];
+  const EDIT_STAGE_LABELS: Record<ProjectStage, string> = {
+    [ProjectStage.planning]: "Planning",
+    [ProjectStage.foundation]: "Foundation",
+    [ProjectStage.structure]: "Structure",
+    [ProjectStage.finishing]: "Finishing",
+    [ProjectStage.completed]: "Completed",
+  };
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 px-2 text-xs gap-1 bg-background/90 backdrop-blur-sm"
+        data-ocid="projects.edit_button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setErrors({});
+          setForm({
+            name: project.name,
+            clientName: project.clientName ?? "",
+            description: project.description,
+            location: project.location,
+            status: project.status,
+            stage: project.stage,
+            budget: project.budget.toString(),
+            startDate: nsToDateInput(project.startDate),
+            endDate: nsToDateInput(project.endDate),
+            estimatedDurationDays: project.estimatedDurationDays.toString(),
+            currentProgressPercentage:
+              project.currentProgressPercentage.toString(),
+          });
+          setOpen(true);
+        }}
+      >
+        <Pencil className="w-3 h-3" /> Edit
+      </Button>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className="max-w-lg max-h-[90vh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit Project</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Project Name *</Label>
+              <Input
+                value={form.name}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
+                className={errors.name ? "border-destructive" : ""}
+              />
+              {errors.name && (
+                <p className="text-xs text-destructive mt-1">{errors.name}</p>
+              )}
+            </div>
+            <div>
+              <Label>Client Name *</Label>
+              <Input
+                value={form.clientName}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, clientName: e.target.value }))
+                }
+                placeholder="e.g. MBCL Ltd"
+                className={errors.clientName ? "border-destructive" : ""}
+              />
+              {errors.clientName && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.clientName}
+                </p>
+              )}
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={form.description}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, description: e.target.value }))
+                }
+                rows={2}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Location *</Label>
+                <Input
+                  value={form.location}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, location: e.target.value }))
+                  }
+                  className={errors.location ? "border-destructive" : ""}
+                />
+                {errors.location && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.location}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Contract Value (Tsh) *</Label>
+                <Input
+                  type="number"
+                  value={form.budget}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, budget: e.target.value }))
+                  }
+                  className={errors.budget ? "border-destructive" : ""}
+                />
+                {errors.budget && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.budget}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, status: v as ProjectStatus }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {editStatuses.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STATUS_LABELS_EDIT[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Construction Stage</Label>
+              <Select
+                value={form.stage}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, stage: v as ProjectStage }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {EDIT_STAGES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {EDIT_STAGE_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Start Date *</Label>
+                <Input
+                  type="date"
+                  value={form.startDate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, startDate: e.target.value }))
+                  }
+                  className={errors.startDate ? "border-destructive" : ""}
+                />
+                {errors.startDate && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.startDate}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>End Date</Label>
+                <Input
+                  type="date"
+                  value={form.endDate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, endDate: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Estimated Duration (days) *</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={form.estimatedDurationDays}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      estimatedDurationDays: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 180"
+                  className={
+                    errors.estimatedDurationDays ? "border-destructive" : ""
+                  }
+                />
+                {errors.estimatedDurationDays && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.estimatedDurationDays}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label>Progress (%)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.currentProgressPercentage}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      currentProgressPercentage: e.target.value,
+                    }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-ocid="projects.edit.cancel_button"
+              onClick={() => handleOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-ocid="projects.edit.save_button"
+              onClick={handleSave}
+              disabled={mutation.isPending}
+            >
+              {mutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 export default function Projects() {
   const { actor } = useActor();
   const { canWrite, login } = useAuth();
@@ -111,6 +472,8 @@ export default function Projects() {
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<ProjectForm>(emptyForm());
+  type FormErrors = Record<string, string>;
+  const [errors, setErrors] = useState<FormErrors>({});
 
   const { data: allProjectsData } = useQuery({
     queryKey: ["projects"],
@@ -133,29 +496,50 @@ export default function Projects() {
       qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       setShowCreate(false);
       setForm(emptyForm());
+      setErrors({});
       toast.success("Project created");
     },
     onError: () => toast.error("Failed to create project"),
   });
 
   function handleSubmit() {
-    if (!form.name || !form.budget) return;
+    const newErrors: FormErrors = {};
+    if (!form.name.trim()) newErrors.name = "Project name is required";
+    if (!form.clientName.trim())
+      newErrors.clientName = "Client name is required";
+    if (!form.location.trim()) newErrors.location = "Location is required";
+    const budgetNum = Number.parseFloat(form.budget);
+    if (!form.budget || Number.isNaN(budgetNum) || budgetNum <= 0)
+      newErrors.budget = "Contract value must be a positive number";
+    if (!form.startDate) newErrors.startDate = "Start date is required";
+    const durationNum = Number.parseFloat(form.estimatedDurationDays);
+    if (
+      !form.estimatedDurationDays ||
+      Number.isNaN(durationNum) ||
+      durationNum <= 0
+    )
+      newErrors.estimatedDurationDays = "Duration must be a positive number";
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
+    setErrors({});
     createMutation.mutate({
       id: 0n,
       name: form.name,
+      clientName: form.clientName,
       description: form.description,
       location: form.location,
       status: form.status,
       stage: form.stage,
-      budget: Number.parseFloat(form.budget),
+      budget: budgetNum,
       startDate: form.startDate ? dateToNs(form.startDate) : nowNs(),
       endDate: form.endDate ? dateToNs(form.endDate) : nowNs(),
-      estimatedDurationDays: form.estimatedDurationDays
-        ? Number.parseFloat(form.estimatedDurationDays)
-        : 0,
+      estimatedDurationDays: durationNum,
       currentProgressPercentage: form.currentProgressPercentage
         ? Number.parseFloat(form.currentProgressPercentage)
         : 0,
+      createdAt: nowNs(),
     });
   }
 
@@ -210,68 +594,69 @@ export default function Projects() {
           {filtered.map((project, i) => {
             const tlStatus = getTimelineStatus(project);
             return (
-              <Link
-                key={project.id.toString()}
-                to="/projects/$id"
-                params={{ id: project.id.toString() }}
-              >
-                <Card
-                  data-ocid={`projects.item.${i + 1}`}
-                  className="shadow-card hover:shadow-md transition-shadow cursor-pointer h-full"
-                >
-                  <CardContent className="p-5">
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <h3 className="font-display font-600 text-base leading-tight">
-                        {project.name}
-                      </h3>
-                      <div className="flex flex-col items-end gap-1">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STATUS_COLORS[project.status]}`}
-                        >
-                          {STATUS_LABELS[project.status]}
-                        </span>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STAGE_COLORS[project.stage]}`}
-                        >
-                          {STAGE_LABELS[project.stage]}
-                        </span>
-                        {tlStatus !== "none" && (
+              <div key={project.id.toString()} className="relative">
+                <Link to="/projects/$id" params={{ id: project.id.toString() }}>
+                  <Card
+                    data-ocid={`projects.item.${i + 1}`}
+                    className="shadow-card hover:shadow-md transition-shadow cursor-pointer h-full"
+                  >
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <h3 className="font-display font-600 text-base leading-tight">
+                          {project.name}
+                        </h3>
+                        <div className="flex flex-col items-end gap-1">
                           <span
-                            className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${TIMELINE_STATUS_CLASSES[tlStatus]}`}
+                            className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STATUS_COLORS[project.status]}`}
                           >
-                            {TIMELINE_STATUS_LABELS[tlStatus]}
+                            {STATUS_LABELS[project.status]}
                           </span>
-                        )}
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STAGE_COLORS[project.stage]}`}
+                          >
+                            {STAGE_LABELS[project.stage]}
+                          </span>
+                          {tlStatus !== "none" && (
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${TIMELINE_STATUS_CLASSES[tlStatus]}`}
+                            >
+                              {TIMELINE_STATUS_LABELS[tlStatus]}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    {project.description && (
-                      <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                        {project.description}
-                      </p>
-                    )}
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                      <MapPin className="w-3 h-3" /> {project.location || "—"}
-                    </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-                      <Calendar className="w-3 h-3" />{" "}
-                      {formatDate(project.startDate)} –{" "}
-                      {formatDate(project.endDate)}
-                    </div>
-                    <div className="text-sm font-medium">
-                      {formatCurrency(project.budget)}{" "}
-                      <span className="text-muted-foreground font-normal">
-                        budget
-                      </span>
-                    </div>
-                    {project.estimatedDurationDays > 0 && (
-                      <div className="text-xs text-muted-foreground mt-1">
-                        {project.currentProgressPercentage}% progress •{" "}
-                        {project.estimatedDurationDays}d timeline
+                      {project.description && (
+                        <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                          {project.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                        <MapPin className="w-3 h-3" /> {project.location || "—"}
                       </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </Link>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+                        <Calendar className="w-3 h-3" />{" "}
+                        {formatDate(project.startDate)} –{" "}
+                        {formatDate(project.endDate)}
+                      </div>
+                      <div className="text-sm font-medium">
+                        {formatCurrency(project.budget)}{" "}
+                        <span className="text-muted-foreground font-normal">
+                          budget
+                        </span>
+                      </div>
+                      {project.estimatedDurationDays > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {project.currentProgressPercentage}% progress •{" "}
+                          {project.estimatedDurationDays}d timeline
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Link>
+                <div className="absolute top-3 right-3 z-10">
+                  <EditProjectDialog project={project} />
+                </div>
+              </div>
             );
           })}
         </div>
@@ -298,6 +683,24 @@ export default function Projects() {
                 }
                 placeholder="e.g. Downtown Office Tower"
               />
+              {errors.name && (
+                <p className="text-xs text-red-500 mt-1">{errors.name}</p>
+              )}
+            </div>
+            <div>
+              <Label htmlFor="proj-client">Client Name *</Label>
+              <Input
+                id="proj-client"
+                data-ocid="project.client.input"
+                value={form.clientName}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, clientName: e.target.value }))
+                }
+                placeholder="e.g. MBCL Ltd"
+              />
+              {errors.clientName && (
+                <p className="text-xs text-red-500 mt-1">{errors.clientName}</p>
+              )}
             </div>
             <div>
               <Label htmlFor="proj-desc">Description</Label>
@@ -314,7 +717,7 @@ export default function Projects() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="proj-loc">Location</Label>
+                <Label htmlFor="proj-loc">Location *</Label>
                 <Input
                   id="proj-loc"
                   data-ocid="project.location.input"
@@ -324,9 +727,12 @@ export default function Projects() {
                   }
                   placeholder="City, State"
                 />
+                {errors.location && (
+                  <p className="text-xs text-red-500 mt-1">{errors.location}</p>
+                )}
               </div>
               <div>
-                <Label htmlFor="proj-budget">Budget (Tsh) *</Label>
+                <Label htmlFor="proj-budget">Contract Value (Tsh) *</Label>
                 <Input
                   id="proj-budget"
                   data-ocid="project.budget.input"
@@ -337,6 +743,9 @@ export default function Projects() {
                   }
                   placeholder="500000"
                 />
+                {errors.budget && (
+                  <p className="text-xs text-red-500 mt-1">{errors.budget}</p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -383,7 +792,7 @@ export default function Projects() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="proj-start">Start Date</Label>
+                <Label htmlFor="proj-start">Start Date *</Label>
                 <Input
                   id="proj-start"
                   data-ocid="project.startdate.input"
@@ -393,6 +802,11 @@ export default function Projects() {
                     setForm((f) => ({ ...f, startDate: e.target.value }))
                   }
                 />
+                {errors.startDate && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {errors.startDate}
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="proj-end">End Date</Label>
@@ -410,7 +824,9 @@ export default function Projects() {
             {/* Timeline fields */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="proj-duration">Estimated Duration (days)</Label>
+                <Label htmlFor="proj-duration">
+                  Estimated Duration (days) *
+                </Label>
                 <Input
                   id="proj-duration"
                   data-ocid="project.duration.input"
@@ -425,6 +841,11 @@ export default function Projects() {
                   }
                   placeholder="e.g. 180"
                 />
+                {errors.estimatedDurationDays && (
+                  <p className="text-xs text-red-500 mt-1">
+                    {errors.estimatedDurationDays}
+                  </p>
+                )}
               </div>
               <div>
                 <Label htmlFor="proj-progress">Progress (%)</Label>
@@ -457,7 +878,7 @@ export default function Projects() {
             <Button
               data-ocid="project.submit_button"
               onClick={handleSubmit}
-              disabled={!form.name || !form.budget || createMutation.isPending}
+              disabled={createMutation.isPending}
             >
               {createMutation.isPending ? "Creating..." : "Create Project"}
             </Button>

@@ -8,19 +8,17 @@ import Int "mo:core/Int";
 import Text "mo:core/Text";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
-
+import Iter "mo:core/Iter";
 import Storage "blob-storage/Storage";
 import MixinStorage "blob-storage/Mixin";
-
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-
-
 
 actor {
   include MixinStorage();
 
-  type Project = {
+  // Legacy type for migration from pre-v19 (no clientName/createdAt)
+  type ProjectLegacy = {
     id : Nat;
     name : Text;
     description : Text;
@@ -32,6 +30,22 @@ actor {
     stage : ProjectStage;
     estimatedDurationDays : Float;
     currentProgressPercentage : Float;
+  };
+
+    type Project = {
+    id : Nat;
+    name : Text;
+    clientName : Text;
+    description : Text;
+    location : Text;
+    startDate : Time.Time;
+    endDate : Time.Time;
+    status : ProjectStatus;
+    budget : Float;
+    stage : ProjectStage;
+    estimatedDurationDays : Float;
+    currentProgressPercentage : Float;
+    createdAt : Time.Time;
   };
 
   type ProjectStatus = { #planning; #active; #completed; #onHold };
@@ -229,7 +243,10 @@ actor {
     expiresAt : Time.Time;
   };
 
-  let projects = Map.empty<Nat, Project>();
+  // "projects" keeps the old type to absorb pre-v19 stable data during upgrade
+  let projects = Map.empty<Nat, ProjectLegacy>();
+  // Runtime storage with new Project type (populated via postupgrade migration)
+  let projectsStore = Map.empty<Nat, Project>();
   let reports = Map.empty<Nat, DailySiteReport>();
   let materials = Map.empty<Nat, Material>();
   let costs = Map.empty<Nat, CostEntry>();
@@ -286,14 +303,14 @@ actor {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view projects");
     };
-    projects.values().toArray();
+    projectsStore.values().toArray();
   };
 
   public query ({ caller }) func getProjectById(id : Nat) : async ?Project {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view projects");
     };
-    projects.get(id);
+    projectsStore.get(id);
   };
 
   public shared ({ caller }) func createProject(project : Project) : async Nat {
@@ -307,18 +324,20 @@ actor {
     let newProject : Project = {
       id = projectId;
       name = project.name;
+      clientName = project.clientName;
       description = project.description;
       location = project.location;
       startDate = project.startDate;
       endDate = project.endDate;
       status = project.status;
       budget = project.budget;
-      stage = #planning;
+      stage = project.stage;
       estimatedDurationDays = project.estimatedDurationDays;
       currentProgressPercentage = project.currentProgressPercentage;
+      createdAt = Time.now();
     };
 
-    projects.add(projectId, newProject);
+    projectsStore.add(projectId, newProject);
     projectId;
   };
 
@@ -327,13 +346,13 @@ actor {
       Runtime.trap("Unauthorized: Only users can update projects");
     };
 
-    let existingProject = switch (projects.get(id)) {
+    let existingProject = switch (projectsStore.get(id)) {
       case (null) { Runtime.trap("Project not found") };
       case (?p) { p };
     };
 
-    let projectWithId = { updatedProject with id };
-    projects.add(id, projectWithId);
+    let projectWithId = { updatedProject with id; createdAt = existingProject.createdAt };
+    projectsStore.add(id, projectWithId);
   };
 
   public shared ({ caller }) func deleteProject(id : Nat) : async () {
@@ -341,10 +360,10 @@ actor {
       Runtime.trap("Unauthorized: Only admins can delete projects");
     };
 
-    switch (projects.get(id)) {
+    switch (projectsStore.get(id)) {
       case (null) { Runtime.trap("Project not found") };
       case (?_) {
-        projects.remove(id);
+        projectsStore.remove(id);
       };
     };
   };
@@ -655,7 +674,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view dashboard stats");
     };
 
-    let allProjects = projects.values().toArray();
+    let allProjects = projectsStore.values().toArray();
 
     let planningCount = allProjects.filter(func(p) { p.status == #planning }).size();
     let activeCount = allProjects.filter(func(p) { p.status == #active }).size();
@@ -722,7 +741,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view cost summaries");
     };
 
-    let project = switch (projects.get(projectId)) {
+    let project = switch (projectsStore.get(projectId)) {
       case (null) { Runtime.trap("Project not found") };
       case (?p) { p };
     };
@@ -764,7 +783,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view cost summaries");
     };
 
-    projects.map<Nat, Project, ProjectCostSummary>(
+    projectsStore.map<Nat, Project, ProjectCostSummary>(
       func(_id, project) {
         let materialsCost = materials.values().toArray().filter(
           func(m) { m.projectId == project.id }
@@ -798,4 +817,80 @@ actor {
       }
     ).values().toArray();
   };
+
+  // New query to get photos by project id
+  public query ({ caller }) func getProjectPhotosByProject(projectId : Nat) : async [ProjectPhoto] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view project photos");
+    };
+    projectPhotos.values().toArray().filter(
+      func(p) { p.projectId == projectId }
+    );
+  };
+
+  // New function to add photo
+  public shared ({ caller }) func addProjectPhoto(photo : ProjectPhoto) : async Nat {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add project photos");
+    };
+
+    let photoId = nextPhotoId;
+    nextPhotoId += 1;
+
+    let newPhoto : ProjectPhoto = {
+      id = photoId;
+      projectId = photo.projectId;
+      reportId = photo.reportId;
+      imageUrl = photo.imageUrl;
+      description = photo.description;
+      dateUploaded = Time.now();
+    };
+
+    projectPhotos.add(photoId, newPhoto);
+    photoId;
+  };
+
+  /// Deletes a project photo by id
+  /// #user permission required (any authenticated user)
+  public shared ({ caller }) func deleteProjectPhoto(id : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: User authentication required");
+    };
+
+    switch (projectPhotos.get(id)) {
+      case (null) { Runtime.trap("Project photo not found") };
+      case (?_) {
+        projectPhotos.remove(id);
+      };
+    };
+  };
+  system func postupgrade() {
+    // Migrate legacy projects (pre-v19, missing clientName/createdAt) into projectsStore
+    for (old in projects.values()) {
+      switch (projectsStore.get(old.id)) {
+        case null {
+          projectsStore.add(old.id, {
+            id = old.id;
+            name = old.name;
+            clientName = "";
+            description = old.description;
+            location = old.location;
+            startDate = old.startDate;
+            endDate = old.endDate;
+            status = old.status;
+            budget = old.budget;
+            stage = old.stage;
+            estimatedDurationDays = old.estimatedDurationDays;
+            currentProgressPercentage = old.currentProgressPercentage;
+            createdAt = 0;
+          });
+          if (old.id >= nextProjectId) {
+            nextProjectId := old.id + 1;
+          };
+        };
+        case _ {};
+      };
+    };
+  };
+
 };

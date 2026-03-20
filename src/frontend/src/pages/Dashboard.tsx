@@ -693,6 +693,7 @@ function ProjectCard({
   project: {
     id: bigint;
     name: string;
+    clientName?: string;
     location: string;
     status: ProjectStatus;
     stage: ProjectStage;
@@ -728,6 +729,11 @@ function ProjectCard({
             <CardTitle className="text-base font-display font-600 leading-tight">
               {project.name}
             </CardTitle>
+            {project.clientName && (
+              <p className="text-xs text-muted-foreground font-medium">
+                {project.clientName}
+              </p>
+            )}
             <div className="flex flex-col items-end gap-1 shrink-0">
               <span
                 className={`text-xs px-2 py-0.5 rounded-full border font-medium ${

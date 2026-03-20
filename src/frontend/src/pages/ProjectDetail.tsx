@@ -106,7 +106,7 @@ type ProjectPhoto = {
   reportId: bigint;
   description: string;
   dateUploaded: bigint;
-  imageUrl: string;
+  imageUrl: ExternalBlob;
 };
 
 const STAGE_LABELS: Record<ProjectStage, string> = {
@@ -616,6 +616,7 @@ function EditProjectDialog({
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: project.name,
+    clientName: project.clientName ?? "",
     description: project.description,
     location: project.location,
     status: project.status,
@@ -626,19 +627,44 @@ function EditProjectDialog({
     estimatedDurationDays: project.estimatedDurationDays.toString(),
     currentProgressPercentage: project.currentProgressPercentage.toString(),
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function validate(): boolean {
+    const errs: Record<string, string> = {};
+    if (!form.name.trim()) errs.name = "Project name is required";
+    if (!form.clientName.trim()) errs.clientName = "Client name is required";
+    if (!form.location.trim()) errs.location = "Location is required";
+    if (!form.budget.trim()) {
+      errs.budget = "Contract value is required";
+    } else if (Number.isNaN(Number(form.budget)) || Number(form.budget) < 0) {
+      errs.budget = "Contract value must be a valid positive number";
+    }
+    if (!form.startDate) errs.startDate = "Start date is required";
+    if (!form.estimatedDurationDays.trim()) {
+      errs.estimatedDurationDays = "Estimated duration is required";
+    } else if (
+      Number(form.estimatedDurationDays) <= 0 ||
+      !Number.isInteger(Number(form.estimatedDurationDays))
+    ) {
+      errs.estimatedDurationDays = "Duration must be a positive whole number";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
 
   const mutation = useMutation({
     mutationFn: () =>
       actor!.updateProject(project.id, {
         ...project,
-        name: form.name,
+        name: form.name.trim(),
+        clientName: form.clientName.trim(),
         description: form.description,
-        location: form.location,
+        location: form.location.trim(),
         status: form.status,
         stage: form.stage,
         budget: Number.parseFloat(form.budget),
         startDate: dateToNs(form.startDate),
-        endDate: dateToNs(form.endDate),
+        endDate: form.endDate ? dateToNs(form.endDate) : project.endDate,
         estimatedDurationDays: Number.parseFloat(
           form.estimatedDurationDays || "0",
         ),
@@ -650,9 +676,21 @@ function EditProjectDialog({
       qc.invalidateQueries({ queryKey: ["project", projectId.toString()] });
       qc.invalidateQueries({ queryKey: ["projects"] });
       setOpen(false);
-      toast.success("Project updated");
+      toast.success("Project updated successfully");
+    },
+    onError: () => {
+      toast.error("Failed to update project. Please try again.");
     },
   });
+
+  function handleSave() {
+    if (validate()) mutation.mutate();
+  }
+
+  function handleOpenChange(val: boolean) {
+    setOpen(val);
+    if (!val) setErrors({});
+  }
 
   const statuses = [
     ProjectStatus.active,
@@ -680,25 +718,63 @@ function EditProjectDialog({
         variant="outline"
         size="sm"
         data-ocid="project.edit_button"
-        onClick={() => setOpen(true)}
+        onClick={() => {
+          setErrors({});
+          setForm({
+            name: project.name,
+            clientName: project.clientName ?? "",
+            description: project.description,
+            location: project.location,
+            status: project.status,
+            stage: project.stage,
+            budget: project.budget.toString(),
+            startDate: nsToDateInput(project.startDate),
+            endDate: nsToDateInput(project.endDate),
+            estimatedDurationDays: project.estimatedDurationDays.toString(),
+            currentProgressPercentage:
+              project.currentProgressPercentage.toString(),
+          });
+          setOpen(true);
+        }}
       >
-        <Pencil className="w-4 h-4 mr-1" /> Edit
+        <Pencil className="w-4 h-4 mr-1" /> Edit Project
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-lg">
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Edit Project</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label>Name</Label>
+              <Label>Project Name *</Label>
               <Input
                 data-ocid="project.edit.name.input"
                 value={form.name}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, name: e.target.value }))
                 }
+                className={errors.name ? "border-destructive" : ""}
               />
+              {errors.name && (
+                <p className="text-xs text-destructive mt-1">{errors.name}</p>
+              )}
+            </div>
+            <div>
+              <Label>Client Name *</Label>
+              <Input
+                data-ocid="project.edit.client.input"
+                value={form.clientName}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, clientName: e.target.value }))
+                }
+                placeholder="e.g. MBCL Ltd"
+                className={errors.clientName ? "border-destructive" : ""}
+              />
+              {errors.clientName && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.clientName}
+                </p>
+              )}
             </div>
             <div>
               <Label>Description</Label>
@@ -713,17 +789,23 @@ function EditProjectDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Location</Label>
+                <Label>Location *</Label>
                 <Input
                   data-ocid="project.edit.location.input"
                   value={form.location}
                   onChange={(e) =>
                     setForm((f) => ({ ...f, location: e.target.value }))
                   }
+                  className={errors.location ? "border-destructive" : ""}
                 />
+                {errors.location && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.location}
+                  </p>
+                )}
               </div>
               <div>
-                <Label>Budget (Tsh)</Label>
+                <Label>Contract Value (Tsh) *</Label>
                 <Input
                   data-ocid="project.edit.budget.input"
                   type="number"
@@ -731,7 +813,13 @@ function EditProjectDialog({
                   onChange={(e) =>
                     setForm((f) => ({ ...f, budget: e.target.value }))
                   }
+                  className={errors.budget ? "border-destructive" : ""}
                 />
+                {errors.budget && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.budget}
+                  </p>
+                )}
               </div>
             </div>
             <div>
@@ -776,7 +864,7 @@ function EditProjectDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Start Date</Label>
+                <Label>Start Date *</Label>
                 <Input
                   data-ocid="project.edit.startdate.input"
                   type="date"
@@ -784,7 +872,13 @@ function EditProjectDialog({
                   onChange={(e) =>
                     setForm((f) => ({ ...f, startDate: e.target.value }))
                   }
+                  className={errors.startDate ? "border-destructive" : ""}
                 />
+                {errors.startDate && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.startDate}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>End Date</Label>
@@ -800,11 +894,11 @@ function EditProjectDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Estimated Duration (days)</Label>
+                <Label>Estimated Duration (days) *</Label>
                 <Input
                   data-ocid="project.edit.duration.input"
                   type="number"
-                  min="0"
+                  min="1"
                   value={form.estimatedDurationDays}
                   onChange={(e) =>
                     setForm((f) => ({
@@ -813,7 +907,15 @@ function EditProjectDialog({
                     }))
                   }
                   placeholder="e.g. 180"
+                  className={
+                    errors.estimatedDurationDays ? "border-destructive" : ""
+                  }
                 />
+                {errors.estimatedDurationDays && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.estimatedDurationDays}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Progress (%)</Label>
@@ -838,13 +940,13 @@ function EditProjectDialog({
             <Button
               variant="outline"
               data-ocid="project.edit.cancel_button"
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
             >
               Cancel
             </Button>
             <Button
               data-ocid="project.edit.save_button"
-              onClick={() => mutation.mutate()}
+              onClick={handleSave}
               disabled={mutation.isPending}
             >
               {mutation.isPending ? "Saving..." : "Save Changes"}
@@ -855,7 +957,6 @@ function EditProjectDialog({
     </>
   );
 }
-
 // ── Stage Panel ──────────────────────────────────────────────────────────────
 
 function StagePanel({
@@ -3458,7 +3559,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
     queryKey: ["photos", projectId.toString()],
     queryFn: async () => {
       if (!actor) return [];
-      const result = await Promise.resolve([] as ProjectPhoto[]);
+      const result = await actor.getProjectPhotosByProject(projectId);
       return [...result].sort((a, b) =>
         a.dateUploaded < b.dateUploaded ? -1 : 1,
       );
@@ -3469,8 +3570,18 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
   const addMutation = useMutation({
     mutationFn: async () => {
       if (!actor || !uploadFile) throw new Error("Missing actor or file");
-      // Photo upload not yet supported by backend canister
-      setUploadProgress(100);
+      const arrayBuffer = await uploadFile.arrayBuffer();
+      setUploadProgress(50);
+      const blob = ExternalBlob.fromBytes(new Uint8Array(arrayBuffer));
+      setUploadProgress(90);
+      return actor.addProjectPhoto({
+        id: 0n,
+        projectId,
+        reportId: 0n,
+        imageUrl: blob,
+        dateUploaded: BigInt(new Date(uploadDate).getTime() * 1_000_000),
+        description: uploadDesc,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -3490,9 +3601,9 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (_id: bigint) => {
+    mutationFn: async (id: bigint) => {
       if (!actor) throw new Error("No actor");
-      // Photo delete not yet supported by backend
+      return actor.deleteProjectPhoto(id);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -3568,8 +3679,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
 
           <div className="space-y-8">
             {photos.map((photo, idx) => {
-              const imgUrl =
-                typeof photo.imageUrl === "string" ? photo.imageUrl : "";
+              const imgUrl = photo.imageUrl?.directURL ?? "";
               return (
                 <div
                   key={photo.id.toString()}
@@ -3773,7 +3883,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
             (() => {
               let imgUrl = "";
               try {
-                imgUrl = enlargedPhoto.imageUrl;
+                imgUrl = enlargedPhoto.imageUrl?.directURL ?? "";
               } catch {
                 imgUrl = "";
               }

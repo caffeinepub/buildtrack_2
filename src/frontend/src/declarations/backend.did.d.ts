@@ -38,6 +38,7 @@ export interface DailySiteReport {
   'notes' : string,
   'weather' : string,
 }
+export type ExternalBlob = Uint8Array;
 export interface Labour {
   'id' : bigint,
   'dailyWage' : number,
@@ -60,7 +61,9 @@ export interface Project {
   'estimatedDurationDays' : number,
   'status' : ProjectStatus,
   'endDate' : Time,
+  'clientName' : string,
   'name' : string,
+  'createdAt' : Time,
   'description' : string,
   'currentProgressPercentage' : number,
   'stage' : ProjectStage,
@@ -78,6 +81,14 @@ export interface ProjectCostSummary {
   'materialsCost' : number,
   'budgetPct' : number,
   'budget' : number,
+}
+export interface ProjectPhoto {
+  'id' : bigint,
+  'description' : string,
+  'dateUploaded' : Time,
+  'imageUrl' : ExternalBlob,
+  'projectId' : bigint,
+  'reportId' : bigint,
 }
 export type ProjectStage = { 'foundation' : null } |
   { 'structure' : null } |
@@ -125,6 +136,7 @@ export interface _SERVICE {
   'addCostEntry' : ActorMethod<[CostEntry], bigint>,
   'addLabour' : ActorMethod<[Labour], bigint>,
   'addMaterial' : ActorMethod<[Material], bigint>,
+  'addProjectPhoto' : ActorMethod<[ProjectPhoto], bigint>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'createProject' : ActorMethod<[Project], bigint>,
   'createReport' : ActorMethod<[DailySiteReport], bigint>,
@@ -133,6 +145,11 @@ export interface _SERVICE {
   'deleteLabour' : ActorMethod<[bigint], undefined>,
   'deleteMaterial' : ActorMethod<[bigint], undefined>,
   'deleteProject' : ActorMethod<[bigint], undefined>,
+  /**
+   * / Deletes a project photo by id
+   * / #user permission required (any authenticated user)
+   */
+  'deleteProjectPhoto' : ActorMethod<[bigint], undefined>,
   'deleteReport' : ActorMethod<[bigint], undefined>,
   'getAllProjectCostSummaries' : ActorMethod<[], Array<ProjectCostSummary>>,
   'getBoqItemsByProject' : ActorMethod<[bigint], Array<BoqItem>>,
@@ -157,6 +174,7 @@ export interface _SERVICE {
   'getMaterialsByProject' : ActorMethod<[bigint], Array<Material>>,
   'getProjectById' : ActorMethod<[bigint], [] | [Project]>,
   'getProjectCostSummary' : ActorMethod<[bigint], [] | [ProjectCostSummary]>,
+  'getProjectPhotosByProject' : ActorMethod<[bigint], Array<ProjectPhoto>>,
   'getProjects' : ActorMethod<[], Array<Project>>,
   'getReportsByProject' : ActorMethod<[bigint], Array<DailySiteReport>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,

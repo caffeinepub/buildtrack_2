@@ -7,6 +7,13 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
+export class ExternalBlob {
+    getBytes(): Promise<Uint8Array<ArrayBuffer>>;
+    getDirectURL(): string;
+    static fromURL(url: string): ExternalBlob;
+    static fromBytes(blob: Uint8Array<ArrayBuffer>): ExternalBlob;
+    withUploadProgress(onProgress: (percentage: number) => void): ExternalBlob;
+}
 export interface Labour {
     id: bigint;
     dailyWage: number;
@@ -24,6 +31,14 @@ export interface DailySiteReport {
     projectId: bigint;
     notes: string;
     weather: string;
+}
+export interface CostEntry {
+    id: bigint;
+    date: Time;
+    description: string;
+    projectId: bigint;
+    category: string;
+    amount: number;
 }
 export type Time = bigint;
 export interface BoqItem {
@@ -56,12 +71,22 @@ export interface ProjectCostSummary {
     budgetPct: number;
     budget: number;
 }
+export interface ProjectPhoto {
+    id: bigint;
+    description: string;
+    dateUploaded: Time;
+    imageUrl: ExternalBlob;
+    projectId: bigint;
+    reportId: bigint;
+}
 export interface Project {
     id: bigint;
     estimatedDurationDays: number;
     status: ProjectStatus;
     endDate: Time;
+    clientName: string;
     name: string;
+    createdAt: Time;
     description: string;
     currentProgressPercentage: number;
     stage: ProjectStage;
@@ -71,14 +96,6 @@ export interface Project {
 }
 export interface UserProfile {
     name: string;
-}
-export interface CostEntry {
-    id: bigint;
-    date: Time;
-    description: string;
-    projectId: bigint;
-    category: string;
-    amount: number;
 }
 export enum ProjectStage {
     foundation = "foundation",
@@ -103,6 +120,7 @@ export interface backendInterface {
     addCostEntry(cost: CostEntry): Promise<bigint>;
     addLabour(labour: Labour): Promise<bigint>;
     addMaterial(material: Material): Promise<bigint>;
+    addProjectPhoto(photo: ProjectPhoto): Promise<bigint>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     createProject(project: Project): Promise<bigint>;
     createReport(report: DailySiteReport): Promise<bigint>;
@@ -111,6 +129,11 @@ export interface backendInterface {
     deleteLabour(id: bigint): Promise<void>;
     deleteMaterial(id: bigint): Promise<void>;
     deleteProject(id: bigint): Promise<void>;
+    /**
+     * / Deletes a project photo by id
+     * / #user permission required (any authenticated user)
+     */
+    deleteProjectPhoto(id: bigint): Promise<void>;
     deleteReport(id: bigint): Promise<void>;
     getAllProjectCostSummaries(): Promise<Array<ProjectCostSummary>>;
     getBoqItemsByProject(projectId: bigint): Promise<Array<BoqItem>>;
@@ -132,6 +155,7 @@ export interface backendInterface {
     getMaterialsByProject(projectId: bigint): Promise<Array<Material>>;
     getProjectById(id: bigint): Promise<Project | null>;
     getProjectCostSummary(projectId: bigint): Promise<ProjectCostSummary | null>;
+    getProjectPhotosByProject(projectId: bigint): Promise<Array<ProjectPhoto>>;
     getProjects(): Promise<Array<Project>>;
     getReportsByProject(projectId: bigint): Promise<Array<DailySiteReport>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
