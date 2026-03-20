@@ -14,6 +14,7 @@ export interface BoqItem {
   'id' : bigint,
   'plannedQuantity' : number,
   'unit' : string,
+  'description' : string,
   'projectId' : bigint,
   'itemName' : string,
   'usedQuantity' : number,
@@ -37,7 +38,6 @@ export interface DailySiteReport {
   'notes' : string,
   'weather' : string,
 }
-export type ExternalBlob = Uint8Array;
 export interface Labour {
   'id' : bigint,
   'dailyWage' : number,
@@ -57,22 +57,27 @@ export interface Material {
 }
 export interface Project {
   'id' : bigint,
+  'estimatedDurationDays' : number,
   'status' : ProjectStatus,
   'endDate' : Time,
   'name' : string,
   'description' : string,
+  'currentProgressPercentage' : number,
   'stage' : ProjectStage,
   'budget' : number,
   'location' : string,
   'startDate' : Time,
 }
-export interface ProjectPhoto {
-  'id' : bigint,
-  'description' : string,
-  'dateUploaded' : Time,
-  'imageUrl' : ExternalBlob,
+export interface ProjectCostSummary {
+  'status' : ProjectStatus,
+  'remainingBudget' : number,
+  'projectName' : string,
+  'totalSpent' : number,
+  'labourCost' : number,
   'projectId' : bigint,
-  'reportId' : bigint,
+  'materialsCost' : number,
+  'budgetPct' : number,
+  'budget' : number,
 }
 export type ProjectStage = { 'foundation' : null } |
   { 'structure' : null } |
@@ -116,38 +121,24 @@ export interface _SERVICE {
   >,
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
-  'addProjectPhoto' : ActorMethod<[ProjectPhoto], bigint>,
+  'addBOQItem' : ActorMethod<[BoqItem], bigint>,
+  'addCostEntry' : ActorMethod<[CostEntry], bigint>,
+  'addLabour' : ActorMethod<[Labour], bigint>,
+  'addMaterial' : ActorMethod<[Material], bigint>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
-  'createBoqItem' : ActorMethod<[BoqItem], bigint>,
-  'createCostEntry' : ActorMethod<[CostEntry], bigint>,
-  'createLabour' : ActorMethod<[Labour], bigint>,
-  'createMaterial' : ActorMethod<[Material], bigint>,
   'createProject' : ActorMethod<[Project], bigint>,
   'createReport' : ActorMethod<[DailySiteReport], bigint>,
-  'deleteBoqItem' : ActorMethod<[bigint], undefined>,
+  'deleteBOQItem' : ActorMethod<[bigint], undefined>,
   'deleteCostEntry' : ActorMethod<[bigint], undefined>,
   'deleteLabour' : ActorMethod<[bigint], undefined>,
   'deleteMaterial' : ActorMethod<[bigint], undefined>,
   'deleteProject' : ActorMethod<[bigint], undefined>,
-  'deleteProjectPhoto' : ActorMethod<[bigint], undefined>,
   'deleteReport' : ActorMethod<[bigint], undefined>,
-  'getAllProjects' : ActorMethod<[], Array<Project>>,
-  'getBoqItem' : ActorMethod<[bigint], [] | [BoqItem]>,
+  'getAllProjectCostSummaries' : ActorMethod<[], Array<ProjectCostSummary>>,
   'getBoqItemsByProject' : ActorMethod<[bigint], Array<BoqItem>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
-  'getCostControlByProject' : ActorMethod<
-    [bigint],
-    {
-      'remainingBudget' : number,
-      'projectBudget' : number,
-      'totalSpent' : number,
-      'labourCost' : number,
-      'materialsCost' : number,
-    }
-  >,
-  'getCostEntry' : ActorMethod<[bigint], [] | [CostEntry]>,
-  'getCostsByProject' : ActorMethod<[bigint], Array<CostEntry>>,
+  'getCostEntriesByProject' : ActorMethod<[bigint], Array<CostEntry>>,
   'getDashboardStats' : ActorMethod<
     [],
     {
@@ -162,36 +153,20 @@ export interface _SERVICE {
       'finishingCount' : bigint,
     }
   >,
-  'getLabour' : ActorMethod<[bigint], [] | [Labour]>,
   'getLabourByProject' : ActorMethod<[bigint], Array<Labour>>,
-  'getMaterial' : ActorMethod<[bigint], [] | [Material]>,
   'getMaterialsByProject' : ActorMethod<[bigint], Array<Material>>,
-  'getPhotosByProject' : ActorMethod<[bigint], Array<ProjectPhoto>>,
-  'getProject' : ActorMethod<[bigint], [] | [Project]>,
-  'getProjectSummary' : ActorMethod<
-    [bigint],
-    {
-      'totalMaterialCost' : number,
-      'totalCostEntries' : number,
-      'totalLabourCost' : number,
-      'variance' : number,
-      'totalSpent' : number,
-      'budget' : number,
-    }
-  >,
-  'getProjectsByStage' : ActorMethod<[ProjectStage], Array<Project>>,
-  'getProjectsByStatus' : ActorMethod<[ProjectStatus], Array<Project>>,
-  'getReport' : ActorMethod<[bigint], [] | [DailySiteReport]>,
+  'getProjectById' : ActorMethod<[bigint], [] | [Project]>,
+  'getProjectCostSummary' : ActorMethod<[bigint], [] | [ProjectCostSummary]>,
+  'getProjects' : ActorMethod<[], Array<Project>>,
   'getReportsByProject' : ActorMethod<[bigint], Array<DailySiteReport>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
-  'updateBoqItem' : ActorMethod<[BoqItem], undefined>,
+  'updateBOQItem' : ActorMethod<[BoqItem], undefined>,
   'updateCostEntry' : ActorMethod<[CostEntry], undefined>,
   'updateLabour' : ActorMethod<[Labour], undefined>,
   'updateMaterial' : ActorMethod<[Material], undefined>,
-  'updateProject' : ActorMethod<[Project], undefined>,
-  'updateProjectStage' : ActorMethod<[bigint, ProjectStage], undefined>,
+  'updateProject' : ActorMethod<[bigint, Project], undefined>,
   'updateReport' : ActorMethod<[DailySiteReport], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;

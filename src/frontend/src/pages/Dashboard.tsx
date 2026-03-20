@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/chart";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Building2,
@@ -17,6 +17,7 @@ import {
   DollarSign,
   Layers,
   PauseCircle,
+  Timer,
   TrendingUp,
 } from "lucide-react";
 import {
@@ -32,6 +33,13 @@ import {
 import { ProjectStage, ProjectStatus } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { formatCurrency, formatDate } from "../lib/appUtils";
+import {
+  PRIORITY_LABELS,
+  TIMELINE_PRIORITY,
+  TIMELINE_STATUS_CLASSES,
+  TIMELINE_STATUS_LABELS,
+  getTimelineStatus,
+} from "../lib/timelineUtils";
 
 const _STATUS_COLORS = {
   Active: "var(--color-active)",
@@ -85,95 +93,76 @@ export default function Dashboard() {
     enabled: !!actor,
   });
 
-  const { data: activeProjects, isLoading: projectsLoading } = useQuery({
-    queryKey: ["projects-active"],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.active),
+  const { data: allProjectsData, isLoading: projectsLoading } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => actor!.getProjects(),
     enabled: !!actor,
   });
 
-  const { data: planningProjects } = useQuery({
-    queryKey: ["projects-planning"],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.planning),
+  const { data: costSummaries } = useQuery({
+    queryKey: ["all-cost-summaries"],
+    queryFn: () => actor!.getAllProjectCostSummaries(),
     enabled: !!actor,
   });
 
-  const { data: completedProjects } = useQuery({
-    queryKey: ["projects-completed"],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.completed),
-    enabled: !!actor,
-  });
-
-  const { data: onHoldProjects } = useQuery({
-    queryKey: ["projects-onHold"],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.onHold),
-    enabled: !!actor,
-  });
-
-  // Stage queries
-  const { data: stagePlanning } = useQuery({
-    queryKey: ["projects-stage", ProjectStage.planning],
-    queryFn: () => actor!.getProjectsByStage(ProjectStage.planning),
-    enabled: !!actor,
-  });
-  const { data: stageFoundation } = useQuery({
-    queryKey: ["projects-stage", ProjectStage.foundation],
-    queryFn: () => actor!.getProjectsByStage(ProjectStage.foundation),
-    enabled: !!actor,
-  });
-  const { data: stageStructure } = useQuery({
-    queryKey: ["projects-stage", ProjectStage.structure],
-    queryFn: () => actor!.getProjectsByStage(ProjectStage.structure),
-    enabled: !!actor,
-  });
-  const { data: stageFinishing } = useQuery({
-    queryKey: ["projects-stage", ProjectStage.finishing],
-    queryFn: () => actor!.getProjectsByStage(ProjectStage.finishing),
-    enabled: !!actor,
-  });
-  const { data: stageCompleted } = useQuery({
-    queryKey: ["projects-stage", ProjectStage.completed],
-    queryFn: () => actor!.getProjectsByStage(ProjectStage.completed),
-    enabled: !!actor,
-  });
+  const allProjects = allProjectsData ?? [];
+  const activeProjects = allProjects.filter(
+    (p) => p.status === ProjectStatus.active,
+  );
+  const planningProjects = allProjects.filter(
+    (p) => p.status === ProjectStatus.planning,
+  );
 
   const stageCounts: Record<ProjectStage, number> = {
-    [ProjectStage.planning]: stagePlanning?.length ?? 0,
-    [ProjectStage.foundation]: stageFoundation?.length ?? 0,
-    [ProjectStage.structure]: stageStructure?.length ?? 0,
-    [ProjectStage.finishing]: stageFinishing?.length ?? 0,
-    [ProjectStage.completed]: stageCompleted?.length ?? 0,
+    [ProjectStage.planning]: allProjects.filter(
+      (p) => p.stage === ProjectStage.planning,
+    ).length,
+    [ProjectStage.foundation]: allProjects.filter(
+      (p) => p.stage === ProjectStage.foundation,
+    ).length,
+    [ProjectStage.structure]: allProjects.filter(
+      (p) => p.stage === ProjectStage.structure,
+    ).length,
+    [ProjectStage.finishing]: allProjects.filter(
+      (p) => p.stage === ProjectStage.finishing,
+    ).length,
+    [ProjectStage.completed]: allProjects.filter(
+      (p) => p.stage === ProjectStage.completed,
+    ).length,
   };
 
-  const allProjects = [
-    ...(activeProjects ?? []),
-    ...(planningProjects ?? []),
-    ...(completedProjects ?? []),
-    ...(onHoldProjects ?? []),
-  ];
+  // Timeline status counts across ALL projects
+  const timelineCounts = allProjects.reduce(
+    (acc, p) => {
+      const s = getTimelineStatus(p);
+      if (s !== "none") acc[s] = (acc[s] ?? 0) + 1;
+      return acc;
+    },
+    { green: 0, yellow: 0, red: 0 } as Record<
+      "green" | "yellow" | "red",
+      number
+    >,
+  );
 
-  const dashboardProjects = [
-    ...(activeProjects ?? []),
-    ...(planningProjects ?? []),
-  ];
-
-  // Fetch summaries for all projects for the budget chart
-  const summaryResults = useQueries({
-    queries: allProjects.map((p) => ({
-      queryKey: ["project-summary", p.id.toString()],
-      queryFn: () => actor!.getProjectSummary(p.id),
-      enabled: !!actor,
-    })),
+  // Sort dashboard projects: Red → Yellow → Green → none
+  const unsortedDashboardProjects = [...activeProjects, ...planningProjects];
+  const dashboardProjects = unsortedDashboardProjects.sort((a, b) => {
+    return (
+      TIMELINE_PRIORITY[getTimelineStatus(a)] -
+      TIMELINE_PRIORITY[getTimelineStatus(b)]
+    );
   });
 
-  const summariesLoading = summaryResults.some((r) => r.isLoading);
-
   const budgetChartData = allProjects
-    .map((p, i) => ({
-      name: p.name.length > 12 ? `${p.name.slice(0, 12)}\u2026` : p.name,
-      budget: p.budget,
-      spent: summaryResults[i]?.data?.totalSpent ?? 0,
-    }))
-    .filter((d) => d.budget > 0 || d.spent > 0);
+    .map((p) => {
+      const summary = costSummaries?.find((s) => s.projectId === p.id);
+      return {
+        name: p.name.length > 12 ? `${p.name.slice(0, 12)}…` : p.name,
+        budget: p.budget,
+        spent: summary?.totalSpent ?? 0,
+      };
+    })
+    .filter((d) => d.budget > 0);
 
   const statusChartData = stats
     ? [
@@ -200,7 +189,7 @@ export default function Dashboard() {
       ].filter((d) => d.value > 0)
     : [];
 
-  const chartsLoading = statsLoading || summariesLoading;
+  const chartsLoading = statsLoading;
 
   return (
     <div data-ocid="dashboard.page" className="p-4 md:p-8">
@@ -476,6 +465,65 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Timeline Status Summary */}
+      <div className="mb-8">
+        <h2 className="font-display text-lg font-600 mb-4 flex items-center gap-2">
+          <Timer className="w-5 h-5 text-primary" /> Project Timeline Status
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card
+            data-ocid="dashboard.timeline.green.card"
+            className="shadow-card border-l-4 border-l-green-500"
+          >
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="text-3xl font-display font-700 text-green-600">
+                {timelineCounts.green}
+              </div>
+              <div>
+                <p className="font-medium text-sm text-green-700">🟢 Safe</p>
+                <p className="text-xs text-muted-foreground">
+                  projects on schedule
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card
+            data-ocid="dashboard.timeline.yellow.card"
+            className="shadow-card border-l-4 border-l-yellow-500"
+          >
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="text-3xl font-display font-700 text-yellow-600">
+                {timelineCounts.yellow}
+              </div>
+              <div>
+                <p className="font-medium text-sm text-yellow-700">
+                  🟡 At Risk
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  projects at risk of delay
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card
+            data-ocid="dashboard.timeline.red.card"
+            className="shadow-card border-l-4 border-l-red-500"
+          >
+            <CardContent className="p-4 flex items-center gap-4">
+              <div className="text-3xl font-display font-700 text-red-600">
+                {timelineCounts.red}
+              </div>
+              <div>
+                <p className="font-medium text-sm text-red-700">🔴 Critical</p>
+                <p className="text-xs text-muted-foreground">
+                  projects overdue
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
       {/* Projects by Stage Summary */}
       <div className="mb-8">
         <h2 className="font-display text-lg font-600 mb-4 flex items-center gap-2">
@@ -511,7 +559,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Project Cards */}
+      {/* Project Cards — sorted by timeline priority (Red → Yellow → Green → none) */}
       <div>
         <h2 className="font-display text-lg font-600 mb-4">
           Active &amp; Planning Projects
@@ -532,15 +580,82 @@ export default function Dashboard() {
             </p>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {dashboardProjects.map((project, i) => (
-              <ProjectCard
-                key={project.id.toString()}
-                project={project}
-                index={i + 1}
-              />
-            ))}
-          </div>
+          <>
+            {(() => {
+              type GroupDef = {
+                label: string;
+                color: string;
+                wrapClass?: string;
+                projects: typeof dashboardProjects;
+              };
+              const groups: GroupDef[] = [
+                {
+                  label: "⚠️ Critical Projects",
+                  color: "text-red-600",
+                  wrapClass:
+                    "bg-red-50/50 rounded-xl p-4 border border-red-200",
+                  projects: dashboardProjects.filter(
+                    (p) =>
+                      getTimelineStatus(
+                        p as Parameters<typeof getTimelineStatus>[0],
+                      ) === "red",
+                  ),
+                },
+                {
+                  label: "⚠ At Risk Projects",
+                  color: "text-yellow-600",
+                  wrapClass: "",
+                  projects: dashboardProjects.filter(
+                    (p) =>
+                      getTimelineStatus(
+                        p as Parameters<typeof getTimelineStatus>[0],
+                      ) === "yellow",
+                  ),
+                },
+                {
+                  label: "✅ Safe Projects",
+                  color: "text-green-600",
+                  wrapClass: "",
+                  projects: dashboardProjects.filter((p) => {
+                    const s = getTimelineStatus(
+                      p as Parameters<typeof getTimelineStatus>[0],
+                    );
+                    return s === "green" || s === "none";
+                  }),
+                },
+              ];
+              return groups
+                .filter((g) => g.projects.length > 0)
+                .map((group) => (
+                  <div
+                    key={group.label}
+                    className={`mb-6 ${group.wrapClass ?? ""}`}
+                  >
+                    <h3
+                      className={`text-sm font-semibold uppercase tracking-wide mb-3 ${group.color} ${group.wrapClass ? "text-base" : ""}`}
+                    >
+                      {group.label} ({group.projects.length})
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                      {group.projects.map((project, i) => {
+                        const summary = costSummaries?.find(
+                          (s) => s.projectId === project.id,
+                        );
+                        return (
+                          <ProjectCard
+                            key={project.id.toString()}
+                            project={project}
+                            index={i + 1}
+                            spent={summary?.totalSpent ?? 0}
+                            budgetPct={summary?.budgetPct ?? 0}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ));
+            })()}
+          </>
         )}
       </div>
     </div>
@@ -572,6 +687,8 @@ function StatusLegend({
 function ProjectCard({
   project,
   index,
+  spent = 0,
+  budgetPct = 0,
 }: {
   project: {
     id: bigint;
@@ -582,27 +699,23 @@ function ProjectCard({
     budget: number;
     startDate: bigint;
     endDate: bigint;
+    estimatedDurationDays: number;
+    currentProgressPercentage: number;
   };
   index: number;
+  spent?: number;
+  budgetPct?: number;
 }) {
-  const { actor } = useActor();
-  const { data: summary } = useQuery({
-    queryKey: ["project-summary", project.id.toString()],
-    queryFn: () => actor!.getProjectSummary(project.id),
-    enabled: !!actor,
-  });
-
-  const spentPct =
-    summary && project.budget > 0
-      ? Math.min((summary.totalSpent / project.budget) * 100, 100)
-      : 0;
-
   const statusColors: Record<string, string> = {
     active: "bg-chart-2/20 text-chart-2 border-chart-2/30",
     planning: "bg-chart-4/20 text-chart-4 border-chart-4/30",
     completed: "bg-muted text-muted-foreground",
     onHold: "bg-destructive/10 text-destructive border-destructive/20",
   };
+
+  const tlStatus = getTimelineStatus(
+    project as Parameters<typeof getTimelineStatus>[0],
+  );
 
   return (
     <Link to="/projects/$id" params={{ id: project.id.toString() }}>
@@ -632,20 +745,43 @@ function ProjectCard({
               >
                 {STAGE_LABELS[project.stage]}
               </span>
+              {tlStatus !== "none" && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full border font-medium ${TIMELINE_STATUS_CLASSES[tlStatus]}`}
+                >
+                  {TIMELINE_STATUS_LABELS[tlStatus]}
+                </span>
+              )}
+              {tlStatus !== "none" && (
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${TIMELINE_STATUS_CLASSES[tlStatus]}`}
+                >
+                  {PRIORITY_LABELS[tlStatus]}
+                </span>
+              )}
             </div>
           </div>
           <p className="text-xs text-muted-foreground">{project.location}</p>
         </CardHeader>
         <CardContent>
           <div className="flex justify-between text-xs text-muted-foreground mb-2">
-            <span>{formatCurrency(summary?.totalSpent ?? 0)} spent</span>
+            <span>{formatCurrency(spent)} spent</span>
             <span>{formatCurrency(project.budget)} budget</span>
           </div>
-          <Progress value={spentPct} className="h-1.5" />
+          <Progress
+            value={Math.min(budgetPct, 100)}
+            className={`h-1.5 ${budgetPct >= 100 ? "[&>div]:bg-destructive" : budgetPct >= 80 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-green-500"}`}
+          />
           <div className="flex justify-between text-xs text-muted-foreground mt-3">
             <span>{formatDate(project.startDate)}</span>
             <span>{formatDate(project.endDate)}</span>
           </div>
+          {project.estimatedDurationDays > 0 && (
+            <div className="mt-2 text-xs text-muted-foreground">
+              {project.currentProgressPercentage}% progress •{" "}
+              {project.estimatedDurationDays}d timeline
+            </div>
+          )}
         </CardContent>
       </Card>
     </Link>

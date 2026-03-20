@@ -7,30 +7,50 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
+  useNavigate,
 } from "@tanstack/react-router";
 import {
   FolderKanban,
   LayoutDashboard,
-  LogIn,
   LogOut,
   Menu,
+  Shield,
+  User,
   X,
 } from "lucide-react";
-
 import { useState } from "react";
 import SplashScreen from "./components/SplashScreen";
-import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Dashboard from "./pages/Dashboard";
+import LoginPage from "./pages/LoginPage";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
+import SetupPage from "./pages/SetupPage";
+import UserManagementPage from "./pages/UserManagementPage";
+
+const ROLE_BADGE: Record<string, { label: string; className: string }> = {
+  admin: {
+    label: "Admin",
+    className: "bg-amber-500/20 text-amber-300 border border-amber-500/30",
+  },
+  user: {
+    label: "User",
+    className: "bg-blue-500/20 text-blue-300 border border-blue-500/30",
+  },
+  guest: {
+    label: "Viewer",
+    className: "bg-gray-500/20 text-gray-300 border border-gray-500/30",
+  },
+};
 
 function Nav({ onClose }: { onClose?: () => void }) {
-  const { identity, login, clear, isLoggingIn } = useInternetIdentity();
-  const isLoggedIn = !!identity;
+  const { identity, userProfile, userRole, isAdmin, logout } = useAuth();
+  const roleInfo = ROLE_BADGE[userRole] ?? ROLE_BADGE.guest;
 
   return (
     <aside className="fixed top-0 left-0 h-full w-56 bg-sidebar text-sidebar-foreground flex flex-col z-30">
-      {/* Brand header with logo */}
+      {/* Brand header */}
       <div className="flex flex-col items-center gap-1 px-3 py-4 border-b border-sidebar-border">
         <img
           src="/assets/uploads/11111logo-1-1.png"
@@ -44,6 +64,7 @@ function Nav({ onClose }: { onClose?: () => void }) {
           Quality Construction, Honest Service, Great Value.
         </span>
       </div>
+
       <nav className="flex-1 px-3 py-4 space-y-1">
         <Link
           to="/"
@@ -57,7 +78,6 @@ function Nav({ onClose }: { onClose?: () => void }) {
             className:
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           }}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <LayoutDashboard className="w-4 h-4" />
           Dashboard
@@ -74,32 +94,76 @@ function Nav({ onClose }: { onClose?: () => void }) {
             className:
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
           }}
-          className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
         >
           <FolderKanban className="w-4 h-4" />
           Projects
         </Link>
-      </nav>
-      <div className="px-4 py-4 border-t border-sidebar-border">
-        {isLoggedIn ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={clear}
+        {isAdmin && (
+          <Link
+            to="/users"
+            data-ocid="nav.users.link"
+            onClick={onClose}
+            activeProps={{
+              className:
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors bg-sidebar-primary text-sidebar-primary-foreground",
+            }}
+            inactiveProps={{
+              className:
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            }}
           >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
+            <Shield className="w-4 h-4" />
+            Users
+          </Link>
+        )}
+      </nav>
+
+      {/* User info + logout */}
+      <div className="px-3 py-4 border-t border-sidebar-border">
+        {identity ? (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 px-1">
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                style={{
+                  background: "oklch(var(--sidebar-primary)/0.2)",
+                  color: "oklch(var(--sidebar-primary))",
+                }}
+              >
+                {userProfile?.name?.[0]?.toUpperCase() ?? (
+                  <User className="w-3 h-3" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-sidebar-foreground truncate">
+                  {userProfile?.name ?? "Anonymous"}
+                </p>
+                <span
+                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${roleInfo.className}`}
+                >
+                  {roleInfo.label}
+                </span>
+              </div>
+            </div>
+            <Button
+              data-ocid="nav.logout.button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+              onClick={logout}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </Button>
+          </div>
         ) : (
           <Button
+            data-ocid="nav.login.button"
             size="sm"
             className="w-full"
-            onClick={login}
-            disabled={isLoggingIn}
+            asChild
           >
-            <LogIn className="w-4 h-4 mr-2" />
-            {isLoggingIn ? "Signing in..." : "Sign In"}
+            <Link to="/login">Sign In</Link>
           </Button>
         )}
       </div>
@@ -109,6 +173,8 @@ function Nav({ onClose }: { onClose?: () => void }) {
 
 function RootLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { identity, userProfile, userRole, logout } = useAuth();
+  const roleInfo = ROLE_BADGE[userRole] ?? ROLE_BADGE.guest;
 
   return (
     <div className="flex min-h-screen">
@@ -128,7 +194,30 @@ function RootLayout() {
         >
           <Menu className="w-5 h-5" />
         </button>
-        <span className="font-display font-bold text-sm">BuildTrack</span>
+        <span className="font-display font-bold text-sm flex-1">
+          BuildTrack
+        </span>
+        {identity && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-sidebar-foreground/70 hidden sm:block">
+              {userProfile?.name ?? ""}
+            </span>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${roleInfo.className}`}
+            >
+              {roleInfo.label}
+            </span>
+            <button
+              type="button"
+              data-ocid="nav.mobile_logout.button"
+              onClick={logout}
+              className="p-1 rounded-md hover:bg-sidebar-accent transition-colors"
+              aria-label="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Mobile nav overlay */}
@@ -162,8 +251,26 @@ function RootLayout() {
   );
 }
 
+// ─── Routes ─────────────────────────────────────────────────────────────────
+
 const rootRoute = createRootRoute({
-  component: RootLayout,
+  component: () => (
+    <AuthProvider>
+      <RootLayout />
+    </AuthProvider>
+  ),
+});
+
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: LoginPage,
+});
+
+const setupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/setup",
+  component: SetupPage,
 });
 
 const dashboardRoute = createRoute({
@@ -184,10 +291,19 @@ const projectDetailRoute = createRoute({
   component: ProjectDetail,
 });
 
+const usersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/users",
+  component: UserManagementPage,
+});
+
 const routeTree = rootRoute.addChildren([
+  loginRoute,
+  setupRoute,
   dashboardRoute,
   projectsRoute,
   projectDetailRoute,
+  usersRoute,
 ]);
 
 const router = createRouter({ routeTree });

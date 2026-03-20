@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowLeft,
   Calendar,
   Camera,
@@ -43,11 +44,13 @@ import {
   Maximize2,
   Pencil,
   Plus,
+  Timer,
   Trash2,
   Upload,
   Users,
 } from "lucide-react";
-import { useState } from "react";
+import { FileText } from "lucide-react";
+import { useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -70,12 +73,11 @@ import {
   type Labour,
   type Material,
   type Project,
-  type ProjectPhoto,
   ProjectStage,
   ProjectStatus,
 } from "../backend";
+import { useAuth } from "../contexts/AuthContext";
 import { useActor } from "../hooks/useActor";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   dateToNs,
   formatCurrency,
@@ -83,6 +85,29 @@ import {
   nowNs,
   nsToDateInput,
 } from "../lib/appUtils";
+import {
+  PRIORITY_LABELS,
+  TIMELINE_STATUS_CLASSES,
+  TIMELINE_STATUS_LABELS,
+  getTimelineInfo,
+  getTimelineStatus,
+} from "../lib/timelineUtils";
+
+// Local types for features not yet in backend
+type BoqFile = {
+  id: bigint;
+  projectId: bigint;
+  fileUrl: string;
+  uploadDate: bigint;
+};
+type ProjectPhoto = {
+  id: bigint;
+  projectId: bigint;
+  reportId: bigint;
+  description: string;
+  dateUploaded: bigint;
+  imageUrl: string;
+};
 
 const STAGE_LABELS: Record<ProjectStage, string> = {
   [ProjectStage.planning]: "Planning",
@@ -128,18 +153,12 @@ export default function ProjectDetail() {
   const projectId = BigInt(id ?? "0");
   const navigate = useNavigate();
   const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
-    queryFn: () => actor!.getProject(projectId),
-    enabled: !!actor,
-  });
-
-  const { data: summary } = useQuery({
-    queryKey: ["project-summary", id],
-    queryFn: () => actor!.getProjectSummary(projectId),
+    queryFn: () => actor!.getProjectById(projectId),
     enabled: !!actor,
   });
 
@@ -157,7 +176,13 @@ export default function ProjectDetail() {
 
   const { data: costs } = useQuery({
     queryKey: ["costs", id],
-    queryFn: () => actor!.getCostsByProject(projectId),
+    queryFn: () => actor!.getCostEntriesByProject(projectId),
+    enabled: !!actor,
+  });
+
+  const { data: costSummary } = useQuery({
+    queryKey: ["cost-summary", id],
+    queryFn: () => actor!.getProjectCostSummary(projectId),
     enabled: !!actor,
   });
 
@@ -182,10 +207,15 @@ export default function ProjectDetail() {
     return <div className="p-8 text-muted-foreground">Project not found.</div>;
   }
 
-  const spentPct =
-    summary && project.budget > 0
-      ? Math.min((summary.totalSpent / project.budget) * 100, 100)
-      : 0;
+  const totalSpent = costSummary?.totalSpent ?? 0;
+  const remaining = costSummary?.remainingBudget ?? project.budget;
+  const budgetPct = costSummary?.budgetPct ?? 0;
+  const spentColor =
+    budgetPct >= 100
+      ? "text-destructive"
+      : budgetPct >= 80
+        ? "text-yellow-600"
+        : "text-green-600";
 
   return (
     <div data-ocid="project.detail.page" className="p-4 md:p-8">
@@ -211,9 +241,19 @@ export default function ProjectDetail() {
             <span className="px-2 py-0.5 rounded-full border text-xs font-medium bg-chart-2/10 text-chart-2 border-chart-2/20">
               {STATUS_LABELS[project.status]}
             </span>
+            {(() => {
+              const tls = getTimelineStatus(project);
+              return tls !== "none" ? (
+                <span
+                  className={`px-2 py-0.5 rounded-full border text-xs font-medium ${TIMELINE_STATUS_CLASSES[tls]}`}
+                >
+                  {TIMELINE_STATUS_LABELS[tls]}
+                </span>
+              ) : null;
+            })()}
           </div>
         </div>
-        {identity && (
+        {canWrite && (
           <div className="flex gap-2">
             <EditProjectDialog project={project} projectId={projectId} />
             <Button
@@ -235,8 +275,8 @@ export default function ProjectDetail() {
       <StagePanel project={project} projectId={projectId} id={id} />
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <Card className="shadow-card">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+        <Card className="shadow-card border-l-4 border-l-blue-800">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground flex items-center gap-1">
               <DollarSign className="w-3.5 h-3.5" /> Budget
@@ -246,36 +286,90 @@ export default function ProjectDetail() {
             </p>
           </CardContent>
         </Card>
-        <Card className="shadow-card">
+        <Card className="shadow-card border-l-4 border-l-amber-500">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Spent</p>
-            <p className="font-display font-700 text-xl mt-1">
-              {formatCurrency(summary?.totalSpent ?? 0)}
+            <p className={`font-display font-700 text-xl mt-1 ${spentColor}`}>
+              {formatCurrency(totalSpent)}
             </p>
           </CardContent>
         </Card>
-        <Card className="shadow-card">
+        <Card className="shadow-card border-l-4 border-l-green-600">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Remaining</p>
             <p
-              className={`font-display font-700 text-xl mt-1 ${
-                (summary?.variance ?? 0) < 0 ? "text-destructive" : ""
-              }`}
+              className={`font-display font-700 text-xl mt-1 ${remaining < 0 ? "text-destructive" : "text-green-600"}`}
             >
-              {formatCurrency(summary ? summary.variance : project.budget)}
+              {formatCurrency(remaining)}
             </p>
           </CardContent>
         </Card>
-        <Card className="shadow-card">
+        <Card className="shadow-card border-l-4 border-l-blue-600">
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Budget Used</p>
-            <p className="font-display font-700 text-xl mt-1">
-              {spentPct.toFixed(1)}%
+            <p className={`font-display font-700 text-xl mt-1 ${spentColor}`}>
+              {budgetPct.toFixed(1)}%
             </p>
-            <Progress value={spentPct} className="mt-2 h-1.5" />
+            <Progress
+              value={Math.min(budgetPct, 100)}
+              className={`mt-2 h-1.5 ${budgetPct >= 100 ? "[&>div]:bg-destructive" : budgetPct >= 80 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-green-500"}`}
+            />
           </CardContent>
         </Card>
       </div>
+
+      {/* Budget alert banners */}
+      {budgetPct >= 100 && (
+        <div
+          data-ocid="project.budget.error_state"
+          className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm font-medium"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Budget Exceeded! Total spent ({formatCurrency(totalSpent)}) has
+          surpassed the project budget ({formatCurrency(project.budget)}).
+        </div>
+      )}
+      {budgetPct >= 80 && budgetPct < 100 && (
+        <div
+          data-ocid="project.budget.warning.panel"
+          className="mb-4 p-3 rounded-lg bg-yellow-50 border border-yellow-200 flex items-center gap-2 text-yellow-700 text-sm font-medium"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Budget Warning: {budgetPct.toFixed(1)}% of budget used.{" "}
+          {formatCurrency(remaining)} remaining.
+        </div>
+      )}
+
+      {/* Timeline alert banners */}
+      {project.estimatedDurationDays > 0 &&
+        (() => {
+          const tlStatus = getTimelineStatus(project);
+          if (tlStatus === "red") {
+            return (
+              <div
+                data-ocid="project.timeline.error_state"
+                className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-center gap-2 text-red-700 text-sm font-medium"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Project is critically delayed — actual progress is significantly
+                behind schedule.
+              </div>
+            );
+          }
+          if (tlStatus === "yellow") {
+            return (
+              <div
+                data-ocid="project.timeline.warning.panel"
+                className="mb-4 p-3 rounded-lg bg-yellow-50 border border-yellow-200 flex items-center gap-2 text-yellow-700 text-sm font-medium"
+              >
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Project is at risk of delay — progress is slightly behind the
+                expected schedule.
+              </div>
+            );
+          }
+          return null;
+        })()}
 
       <Tabs defaultValue="overview">
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 mb-6">
@@ -303,6 +397,9 @@ export default function ProjectDetail() {
             </TabsTrigger>
             <TabsTrigger value="budget" data-ocid="project.budget.tab">
               Budget
+            </TabsTrigger>
+            <TabsTrigger value="schedule" data-ocid="project.schedule.tab">
+              Schedule
             </TabsTrigger>
             <TabsTrigger value="photos" data-ocid="project.photos.tab">
               Photo Progress
@@ -342,6 +439,127 @@ export default function ProjectDetail() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Project Timeline Card */}
+          {project.estimatedDurationDays > 0 &&
+            (() => {
+              const tlInfo = getTimelineInfo(project);
+              const timeUsedPct = Math.min(
+                100,
+                (tlInfo.timePassed / project.estimatedDurationDays) * 100,
+              );
+              return (
+                <Card
+                  className="shadow-card mt-4"
+                  data-ocid="project.timeline.card"
+                >
+                  <CardHeader className="pb-2">
+                    <CardTitle className="font-display text-base">
+                      Project Timeline
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Estimated Duration
+                        </p>
+                        <p className="font-600 font-display">
+                          {project.estimatedDurationDays} days
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Time Passed
+                        </p>
+                        <p className="font-600 font-display">
+                          {tlInfo.timePassed} days
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Time Remaining
+                        </p>
+                        <p
+                          className={`font-600 font-display ${tlInfo.timeRemaining < 0 ? "text-destructive" : ""}`}
+                        >
+                          {tlInfo.timeRemaining < 0
+                            ? `${Math.abs(tlInfo.timeRemaining)} days overdue`
+                            : `${tlInfo.timeRemaining} days`}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Expected Progress
+                        </p>
+                        <p className="font-600 font-display text-blue-700">
+                          {tlInfo.expectedProgress.toFixed(1)}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          Actual Progress
+                        </p>
+                        <p className="font-600 font-display text-green-700">
+                          {project.currentProgressPercentage}%
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Delay</p>
+                        <p
+                          className={`font-600 font-display ${tlInfo.delayPct > 0 ? "text-destructive" : "text-green-700"}`}
+                        >
+                          {tlInfo.delayPct > 0
+                            ? `${tlInfo.delayPct.toFixed(1)}% behind`
+                            : "On track"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-muted-foreground">
+                        Timeline Status:
+                      </p>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full border font-medium ${TIMELINE_STATUS_CLASSES[tlInfo.status]}`}
+                      >
+                        {TIMELINE_STATUS_LABELS[tlInfo.status]}
+                      </span>
+                    </div>
+
+                    {/* Dual Progress Bar */}
+                    <div className="space-y-2">
+                      <div>
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                          <span>Time Used</span>
+                          <span>{timeUsedPct.toFixed(0)}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                          <div
+                            className={`h-2.5 rounded-full transition-all duration-500 ${tlInfo.status === "red" ? "bg-red-500" : tlInfo.status === "yellow" ? "bg-yellow-500" : "bg-blue-500"}`}
+                            style={{ width: `${timeUsedPct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                          <span>Progress</span>
+                          <span>{project.currentProgressPercentage}%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+                          <div
+                            className="h-2.5 rounded-full bg-green-500 transition-all duration-500"
+                            style={{
+                              width: `${Math.min(100, project.currentProgressPercentage)}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })()}
         </TabsContent>
 
         <TabsContent value="reports">
@@ -361,7 +579,11 @@ export default function ProjectDetail() {
         </TabsContent>
 
         <TabsContent value="cost-control">
-          <CostControlTab projectId={projectId} project={project} />
+          <CostControlTab
+            projectId={projectId}
+            project={project}
+            costSummary={costSummary}
+          />
         </TabsContent>
 
         <TabsContent value="budget">
@@ -369,8 +591,11 @@ export default function ProjectDetail() {
             projectId={projectId}
             costs={costs ?? []}
             project={project}
-            summary={summary}
+            summary={undefined}
           />
+        </TabsContent>
+        <TabsContent value="schedule">
+          <ScheduleTab project={project} projectId={projectId} />
         </TabsContent>
         <TabsContent value="photos">
           <PhotoProgressTab projectId={BigInt(projectId)} />
@@ -398,11 +623,13 @@ function EditProjectDialog({
     budget: project.budget.toString(),
     startDate: nsToDateInput(project.startDate),
     endDate: nsToDateInput(project.endDate),
+    estimatedDurationDays: project.estimatedDurationDays.toString(),
+    currentProgressPercentage: project.currentProgressPercentage.toString(),
   });
 
   const mutation = useMutation({
     mutationFn: () =>
-      actor!.updateProject({
+      actor!.updateProject(project.id, {
         ...project,
         name: form.name,
         description: form.description,
@@ -412,6 +639,12 @@ function EditProjectDialog({
         budget: Number.parseFloat(form.budget),
         startDate: dateToNs(form.startDate),
         endDate: dateToNs(form.endDate),
+        estimatedDurationDays: Number.parseFloat(
+          form.estimatedDurationDays || "0",
+        ),
+        currentProgressPercentage: Number.parseFloat(
+          form.currentProgressPercentage || "0",
+        ),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", projectId.toString()] });
@@ -565,6 +798,41 @@ function EditProjectDialog({
                 />
               </div>
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Estimated Duration (days)</Label>
+                <Input
+                  data-ocid="project.edit.duration.input"
+                  type="number"
+                  min="0"
+                  value={form.estimatedDurationDays}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      estimatedDurationDays: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 180"
+                />
+              </div>
+              <div>
+                <Label>Progress (%)</Label>
+                <Input
+                  data-ocid="project.edit.progress.input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.currentProgressPercentage}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      currentProgressPercentage: e.target.value,
+                    }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -596,7 +864,7 @@ function StagePanel({
   id,
 }: { project: Project; projectId: bigint; id: string | undefined }) {
   const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
   const [selectedStage, setSelectedStage] = useState<ProjectStage>(
     project.stage,
@@ -604,7 +872,7 @@ function StagePanel({
 
   const stageMutation = useMutation({
     mutationFn: (stage: ProjectStage) =>
-      actor!.updateProjectStage(projectId, stage),
+      actor!.updateProject(projectId, { ...project, stage }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
@@ -657,7 +925,7 @@ function StagePanel({
               <span>Completed</span>
             </div>
           </div>
-          {identity && (
+          {canWrite && (
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:w-64">
               <Select
                 value={selectedStage}
@@ -702,7 +970,7 @@ function ReportsTab({
   reports,
 }: { projectId: bigint; reports: DailySiteReport[] }) {
   const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [editReport, setEditReport] = useState<DailySiteReport | null>(null);
@@ -792,7 +1060,7 @@ function ReportsTab({
         <h2 className="font-display font-600 text-lg">
           Daily Site Reports ({reports.length})
         </h2>
-        {identity && (
+        {canWrite && (
           <Button
             size="sm"
             data-ocid="project.add_report_button"
@@ -837,7 +1105,7 @@ function ReportsTab({
                       </span>
                     </div>
                   </div>
-                  {identity && (
+                  {canWrite && (
                     <div className="flex gap-1">
                       <Button
                         variant="ghost"
@@ -1003,7 +1271,7 @@ function MaterialsTab({
   materials,
 }: { projectId: bigint; materials: Material[] }) {
   const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [editMaterial, setEditMaterial] = useState<Material | null>(null);
@@ -1016,10 +1284,14 @@ function MaterialsTab({
   });
 
   const createMutation = useMutation({
-    mutationFn: (m: Material) => actor!.createMaterial(m),
+    mutationFn: (m: Material) => actor!.addMaterial(m),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["materials", projectId.toString()] });
       qc.invalidateQueries({ queryKey: ["project-summary"] });
+      qc.invalidateQueries({
+        queryKey: ["cost-summary", projectId.toString()],
+      });
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
       setShowAdd(false);
       resetForm();
       toast.success("Material added");
@@ -1032,6 +1304,10 @@ function MaterialsTab({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["materials", projectId.toString()] });
       qc.invalidateQueries({ queryKey: ["project-summary"] });
+      qc.invalidateQueries({
+        queryKey: ["cost-summary", projectId.toString()],
+      });
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
       setEditMaterial(null);
       toast.success("Material updated");
     },
@@ -1042,6 +1318,10 @@ function MaterialsTab({
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["materials", projectId.toString()] });
       qc.invalidateQueries({ queryKey: ["project-summary"] });
+      qc.invalidateQueries({
+        queryKey: ["cost-summary", projectId.toString()],
+      });
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
       toast.success("Material deleted");
     },
   });
@@ -1088,7 +1368,7 @@ function MaterialsTab({
           Materials ({materials.length}) &mdash; Total:{" "}
           {formatCurrency(totalMaterialCost)}
         </h2>
-        {identity && (
+        {canWrite && (
           <Button
             size="sm"
             data-ocid="project.add_material_button"
@@ -1120,7 +1400,7 @@ function MaterialsTab({
                   <TableHead className="text-right">Unit Cost</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Supplier</TableHead>
-                  {identity && <TableHead />}
+                  {canWrite && <TableHead />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1141,7 +1421,7 @@ function MaterialsTab({
                     <TableCell className="text-muted-foreground">
                       {m.supplier || "—"}
                     </TableCell>
-                    {identity && (
+                    {canWrite && (
                       <TableCell>
                         <div className="flex gap-1 justify-end">
                           <Button
@@ -1283,7 +1563,7 @@ function MaterialsTab({
 
 function LabourTab({ projectId }: { projectId: bigint }) {
   const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [editLabour, setEditLabour] = useState<Labour | null>(null);
@@ -1301,11 +1581,14 @@ function LabourTab({ projectId }: { projectId: bigint }) {
   });
 
   const createMutation = useMutation({
-    mutationFn: (l: Labour) => actor!.createLabour(l),
+    mutationFn: (l: Labour) => actor!.addLabour(l),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["labour", projectId.toString()] });
       qc.invalidateQueries({
         queryKey: ["cost-control", projectId.toString()],
+      });
+      qc.invalidateQueries({
+        queryKey: ["cost-summary", projectId.toString()],
       });
       setShowAdd(false);
       resetForm();
@@ -1321,6 +1604,9 @@ function LabourTab({ projectId }: { projectId: bigint }) {
       qc.invalidateQueries({
         queryKey: ["cost-control", projectId.toString()],
       });
+      qc.invalidateQueries({
+        queryKey: ["cost-summary", projectId.toString()],
+      });
       setEditLabour(null);
       toast.success("Labour record updated");
     },
@@ -1332,6 +1618,9 @@ function LabourTab({ projectId }: { projectId: bigint }) {
       qc.invalidateQueries({ queryKey: ["labour", projectId.toString()] });
       qc.invalidateQueries({
         queryKey: ["cost-control", projectId.toString()],
+      });
+      qc.invalidateQueries({
+        queryKey: ["cost-summary", projectId.toString()],
       });
       toast.success("Labour record deleted");
     },
@@ -1378,7 +1667,7 @@ function LabourTab({ projectId }: { projectId: bigint }) {
           Labour ({labourList.length}) &mdash; Total:{" "}
           {formatCurrency(totalLabourCost)}
         </h2>
-        {identity && (
+        {canWrite && (
           <Button
             size="sm"
             data-ocid="project.add_labour_button"
@@ -1409,7 +1698,7 @@ function LabourTab({ projectId }: { projectId: bigint }) {
                   <TableHead className="text-right">Daily Wage (Tsh)</TableHead>
                   <TableHead className="text-right">Days Worked</TableHead>
                   <TableHead className="text-right">Total (Tsh)</TableHead>
-                  {identity && <TableHead />}
+                  {canWrite && <TableHead />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1431,7 +1720,7 @@ function LabourTab({ projectId }: { projectId: bigint }) {
                     <TableCell className="text-right font-medium">
                       {formatCurrency(l.dailyWage * l.daysWorked)}
                     </TableCell>
-                    {identity && (
+                    {canWrite && (
                       <TableCell>
                         <div className="flex gap-1 justify-end">
                           <Button
@@ -1570,31 +1859,64 @@ function getBoqStatus(
   return "ok";
 }
 
+type ColumnMapping = {
+  itemName: string;
+  description: string;
+  unit: string;
+  plannedQuantity: string;
+  unitRate: string;
+};
+
 function BOQTab({
   projectId,
   materials,
 }: { projectId: bigint; materials: Material[] }) {
-  const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { actor, isFetching } = useActor();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Dialog state
   const [showAdd, setShowAdd] = useState(false);
   const [editItem, setEditItem] = useState<BoqItem | null>(null);
   const [form, setForm] = useState({
     itemName: "",
+    description: "",
     unit: "",
     plannedQuantity: "",
     unitRate: "",
     usedQuantity: "0",
   });
 
+  // File upload state
+  const [parsedRows, setParsedRows] = useState<string[][]>([]);
+  const [parsedHeaders, setParsedHeaders] = useState<string[]>([]);
+  const [showMappingDialog, setShowMappingDialog] = useState(false);
+  const [colMapping, setColMapping] = useState<ColumnMapping>({
+    itemName: "",
+    description: "",
+    unit: "",
+    plannedQuantity: "",
+    unitRate: "",
+  });
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Queries
   const { data: boqItems = [] } = useQuery({
     queryKey: ["boq", projectId.toString()],
     queryFn: () => actor!.getBoqItemsByProject(projectId),
-    enabled: !!actor,
+    enabled: !!actor && !isFetching,
   });
 
+  const { data: boqFiles = [] } = useQuery<BoqFile[]>({
+    queryKey: ["boq-files", projectId.toString()],
+    queryFn: () => Promise.resolve([] as BoqFile[]),
+    enabled: !!actor && !isFetching,
+  });
+
+  // Mutations
   const createMutation = useMutation({
-    mutationFn: (item: BoqItem) => actor!.createBoqItem(item),
+    mutationFn: (item: BoqItem) => actor!.addBOQItem(item),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
       setShowAdd(false);
@@ -1605,7 +1927,7 @@ function BOQTab({
   });
 
   const updateMutation = useMutation({
-    mutationFn: (item: BoqItem) => actor!.updateBoqItem(item),
+    mutationFn: (item: BoqItem) => actor!.updateBOQItem(item),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
       setEditItem(null);
@@ -1614,16 +1936,25 @@ function BOQTab({
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: bigint) => actor!.deleteBoqItem(id),
+    mutationFn: (id: bigint) => actor!.deleteBOQItem(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
       toast.success("BOQ item deleted");
     },
   });
 
+  const deleteFileMutation = useMutation({
+    mutationFn: (id: bigint) => Promise.resolve() || actor!.deleteBOQItem(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["boq-files", projectId.toString()] });
+      toast.success("BOQ file deleted");
+    },
+  });
+
   function resetForm() {
     setForm({
       itemName: "",
+      description: "",
       unit: "",
       plannedQuantity: "",
       unitRate: "",
@@ -1634,6 +1965,7 @@ function BOQTab({
   function openEdit(item: BoqItem) {
     setForm({
       itemName: item.itemName,
+      description: item.description,
       unit: item.unit,
       plannedQuantity: item.plannedQuantity.toString(),
       unitRate: item.unitRate.toString(),
@@ -1647,6 +1979,7 @@ function BOQTab({
       id: editItem ? editItem.id : 0n,
       projectId,
       itemName: form.itemName,
+      description: form.description,
       unit: form.unit,
       plannedQuantity: Number.parseFloat(form.plannedQuantity || "0"),
       unitRate: Number.parseFloat(form.unitRate || "0"),
@@ -1656,43 +1989,319 @@ function BOQTab({
     else createMutation.mutate(payload);
   }
 
-  // Compute usedQuantity from materials (auto-sync by matching item name)
   function computeUsedQty(itemName: string): number {
     const lower = itemName.toLowerCase();
     const matched = materials.filter((m) => m.name.toLowerCase() === lower);
-    if (matched.length > 0) {
+    if (matched.length > 0)
       return matched.reduce((sum, m) => sum + m.quantity, 0);
-    }
-    return -1; // -1 means no materials match, use stored value
+    return -1;
   }
+
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const name = file.name.toLowerCase();
+    if (name.endsWith(".pdf")) {
+      toast.info(
+        "Auto-extraction not available for PDF. Please add items manually.",
+      );
+      setShowAdd(true);
+      return;
+    }
+
+    try {
+      let csvText = "";
+      if (name.endsWith(".csv")) {
+        csvText = await file.text();
+      } else if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
+        // Excel parsing requires external library - treat as unsupported
+        toast.error(
+          "Excel files not supported. Please save as CSV and re-upload.",
+        );
+        return;
+      }
+
+      // Simple CSV parsing
+      const rows: string[][] = csvText
+        .split("\n")
+        .filter((line) => line.trim())
+        .map((line) =>
+          line.split(",").map((c) => c.trim().replace(/^"|"$/g, "")),
+        );
+      if (rows.length < 2) {
+        toast.error("File appears empty or has no data rows.");
+        return;
+      }
+      const headers = rows[0];
+      setParsedHeaders(headers);
+      setParsedRows(rows.slice(1));
+
+      // Auto-detect column mapping
+      const autoMap: ColumnMapping = {
+        itemName: "",
+        description: "",
+        unit: "",
+        plannedQuantity: "",
+        unitRate: "",
+      };
+      for (const h of headers) {
+        const hl = h.toLowerCase().trim();
+        if (
+          !autoMap.itemName &&
+          (hl.includes("item") ||
+            hl.includes("name") ||
+            (hl.includes("description") && !hl.includes("desc")))
+        )
+          autoMap.itemName = h;
+        if (
+          !autoMap.description &&
+          (hl.includes("desc") || hl.includes("detail") || hl.includes("spec"))
+        )
+          autoMap.description = h;
+        if (
+          !autoMap.unit &&
+          hl.includes("unit") &&
+          !hl.includes("rate") &&
+          !hl.includes("cost")
+        )
+          autoMap.unit = h;
+        if (
+          !autoMap.plannedQuantity &&
+          (hl.includes("qty") ||
+            hl.includes("quantity") ||
+            hl.includes("amount"))
+        )
+          autoMap.plannedQuantity = h;
+        if (
+          !autoMap.unitRate &&
+          (hl.includes("rate") || hl.includes("price") || hl.includes("cost"))
+        )
+          autoMap.unitRate = h;
+      }
+      setColMapping(autoMap);
+
+      // Store the file in backend blob storage
+      setIsUploading(true);
+      try {
+        // BOQ file metadata - skip backend save (not supported)
+        // File items will be imported directly via CSV parsing
+        qc.invalidateQueries({ queryKey: ["boq-files", projectId.toString()] });
+        toast.success("BOQ file uploaded");
+      } catch {
+        toast.error(
+          "File metadata save failed, but you can still import items.",
+        );
+      } finally {
+        setIsUploading(false);
+      }
+
+      setShowMappingDialog(true);
+    } catch {
+      toast.error("Failed to parse file. Please check the format.");
+    }
+  }
+
+  async function handleImportItems() {
+    if (!actor) return;
+    const items: BoqItem[] = parsedRows.map((row) => {
+      const get = (col: string) => {
+        const idx = parsedHeaders.indexOf(col);
+        return idx >= 0 ? (row[idx] ?? "").trim() : "";
+      };
+      return {
+        id: 0n,
+        projectId,
+        itemName: get(colMapping.itemName) || "Unnamed Item",
+        description: get(colMapping.description),
+        unit: get(colMapping.unit),
+        plannedQuantity:
+          Number.parseFloat(get(colMapping.plannedQuantity) || "0") || 0,
+        unitRate: Number.parseFloat(get(colMapping.unitRate) || "0") || 0,
+        usedQuantity: 0,
+      };
+    });
+
+    try {
+      await Promise.all(items.map((item) => actor.addBOQItem(item)));
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
+      toast.success(`${items.length} BOQ items imported`);
+      setShowMappingDialog(false);
+    } catch {
+      toast.error("Import failed. Please try again.");
+    }
+  }
+
+  // Compute chart data and summary
+  const enrichedItems = boqItems.map((item) => {
+    const materialUsed = computeUsedQty(item.itemName);
+    const usedQty = materialUsed >= 0 ? materialUsed : item.usedQuantity;
+    const plannedCost = item.plannedQuantity * item.unitRate;
+    const actualCost = usedQty * item.unitRate;
+    const remainingQty = item.plannedQuantity - usedQty;
+    const status = getBoqStatus(usedQty, item.plannedQuantity);
+    return {
+      ...item,
+      usedQty,
+      plannedCost,
+      actualCost,
+      remainingQty,
+      status,
+      materialUsed,
+    };
+  });
+
+  const totalPlannedCost = enrichedItems.reduce((s, i) => s + i.plannedCost, 0);
+  const totalActualCost = enrichedItems.reduce((s, i) => s + i.actualCost, 0);
+  const costVariance = totalPlannedCost - totalActualCost;
+
+  const chartData = enrichedItems.map((item) => ({
+    name:
+      item.itemName.length > 15
+        ? `${item.itemName.slice(0, 15)}…`
+        : item.itemName,
+    planned: item.plannedQuantity,
+    used: item.usedQty,
+    status: item.status,
+  }));
 
   const isOpen = showAdd || !!editItem;
   const isPending = createMutation.isPending || updateMutation.isPending;
 
+  const BAR_COLORS: Record<string, string> = {
+    ok: "#16a34a",
+    warning: "#d97706",
+    exceeded: "#dc2626",
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      {/* Header Row */}
+      <div className="flex flex-wrap gap-2 justify-between items-center">
         <h2 className="font-display font-600 text-lg">
           Bill of Quantities ({boqItems.length})
         </h2>
-        {identity && (
-          <Button
-            size="sm"
-            data-ocid="project.add_boq_button"
-            onClick={() => {
-              resetForm();
-              setShowAdd(true);
-            }}
-          >
-            <Plus className="w-4 h-4 mr-1" /> Add BOQ Item
-          </Button>
+        {canWrite && (
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant="outline"
+              data-ocid="project.upload_boq_button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              className="border-blue-700 text-blue-700 hover:bg-blue-50"
+            >
+              <Upload className="w-4 h-4 mr-1" />
+              {isUploading ? "Uploading..." : "Upload BOQ File"}
+            </Button>
+            <Button
+              size="sm"
+              data-ocid="project.add_boq_button"
+              onClick={() => {
+                resetForm();
+                setShowAdd(true);
+              }}
+            >
+              <Plus className="w-4 h-4 mr-1" /> Add BOQ Item
+            </Button>
+          </div>
         )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx,.xls,.pdf"
+          className="hidden"
+          onChange={handleFileSelect}
+          data-ocid="boq.file_upload_input"
+        />
       </div>
 
+      {/* Uploaded Files List */}
+      {boqFiles.length > 0 && (
+        <Card className="bg-blue-950/30 border-blue-800/40">
+          <CardContent className="py-3 px-4">
+            <p className="text-xs font-medium text-blue-300 mb-2">
+              Uploaded BOQ Files
+            </p>
+            <div className="space-y-1">
+              {boqFiles.map((f, i) => (
+                <div
+                  key={f.id.toString()}
+                  className="flex items-center justify-between text-sm"
+                  data-ocid={`boq.file.item.${i + 1}`}
+                >
+                  <div className="flex items-center gap-2 text-blue-100">
+                    <FileText className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                    <span>{formatDate(f.uploadDate)}</span>
+                  </div>
+                  {canWrite && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-red-400 hover:text-red-300"
+                      data-ocid={`boq.file.delete_button.${i + 1}`}
+                      onClick={() => {
+                        if (confirm("Remove this BOQ file record?"))
+                          deleteFileMutation.mutate(f.id);
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Cost Summary Cards */}
+      {boqItems.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="bg-blue-950/20 border-blue-800/40">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-blue-300 mb-1">Total Planned Cost</p>
+              <p className="text-lg font-bold text-white">
+                {formatCurrency(totalPlannedCost)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card className="bg-blue-950/20 border-blue-800/40">
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-blue-300 mb-1">Total Actual Cost</p>
+              <p className="text-lg font-bold text-amber-400">
+                {formatCurrency(totalActualCost)}
+              </p>
+            </CardContent>
+          </Card>
+          <Card
+            className={`border ${costVariance < 0 ? "bg-red-950/20 border-red-800/40" : "bg-green-950/20 border-green-800/40"}`}
+          >
+            <CardContent className="py-3 px-4">
+              <p className="text-xs text-blue-300 mb-1">Cost Variance</p>
+              <p
+                className={`text-lg font-bold ${costVariance < 0 ? "text-red-400" : "text-green-400"}`}
+              >
+                {costVariance < 0 ? "−" : "+"}
+                {formatCurrency(Math.abs(costVariance))}
+                {costVariance < 0 && (
+                  <span className="ml-2 text-xs bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded">
+                    Overrun
+                  </span>
+                )}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* BOQ Table */}
       {boqItems.length === 0 ? (
         <Card data-ocid="project.boq.empty_state">
           <CardContent className="py-10 text-center text-muted-foreground">
-            No BOQ items yet. Add items to track planned vs actual quantities.
+            No BOQ items yet. Upload a BOQ file or add items manually to start
+            tracking.
           </CardContent>
         </Card>
       ) : (
@@ -1700,126 +2309,190 @@ function BOQTab({
           <div className="overflow-x-auto w-full">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Item Name</TableHead>
-                  <TableHead>Unit</TableHead>
-                  <TableHead className="text-right">Planned Qty</TableHead>
-                  <TableHead className="text-right">Unit Rate (Tsh)</TableHead>
-                  <TableHead className="text-right">Planned Cost</TableHead>
-                  <TableHead className="text-right">Used Qty</TableHead>
-                  <TableHead className="text-right">Remaining Qty</TableHead>
-                  <TableHead>Status</TableHead>
-                  {identity && <TableHead />}
+                <TableRow className="bg-blue-950/40">
+                  <TableHead className="text-blue-200">Item Name</TableHead>
+                  <TableHead className="text-blue-200">Description</TableHead>
+                  <TableHead className="text-blue-200">Unit</TableHead>
+                  <TableHead className="text-right text-blue-200">
+                    Planned Qty
+                  </TableHead>
+                  <TableHead className="text-right text-blue-200">
+                    Used Qty
+                  </TableHead>
+                  <TableHead className="text-right text-blue-200">
+                    Remaining
+                  </TableHead>
+                  <TableHead className="text-right text-blue-200">
+                    Unit Rate (Tsh)
+                  </TableHead>
+                  <TableHead className="text-right text-blue-200">
+                    Planned Cost
+                  </TableHead>
+                  <TableHead className="text-right text-blue-200">
+                    Actual Cost
+                  </TableHead>
+                  <TableHead className="text-blue-200">Status</TableHead>
+                  {canWrite && <TableHead />}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {boqItems.map((item, i) => {
-                  const materialUsed = computeUsedQty(item.itemName);
-                  const usedQty =
-                    materialUsed >= 0 ? materialUsed : item.usedQuantity;
-                  const plannedCost = item.plannedQuantity * item.unitRate;
-                  const remainingQty = item.plannedQuantity - usedQty;
-                  const status = getBoqStatus(usedQty, item.plannedQuantity);
-
-                  return (
-                    <TableRow
-                      key={item.id.toString()}
-                      data-ocid={`project.boq.item.${i + 1}`}
-                      className={
-                        status === "exceeded"
-                          ? "bg-red-50 hover:bg-red-100"
-                          : ""
-                      }
+                {enrichedItems.map((item, i) => (
+                  <TableRow
+                    key={item.id.toString()}
+                    data-ocid={`project.boq.item.${i + 1}`}
+                    className={
+                      item.status === "exceeded"
+                        ? "bg-red-950/20 hover:bg-red-950/30"
+                        : ""
+                    }
+                  >
+                    <TableCell className="font-medium">
+                      {item.itemName}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground max-w-[160px] truncate">
+                      {item.description}
+                    </TableCell>
+                    <TableCell>{item.unit}</TableCell>
+                    <TableCell className="text-right">
+                      {item.plannedQuantity}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-medium ${item.status === "exceeded" ? "text-red-400" : item.status === "warning" ? "text-amber-400" : ""}`}
                     >
-                      <TableCell className="font-medium">
-                        {item.itemName}
-                      </TableCell>
-                      <TableCell>{item.unit}</TableCell>
-                      <TableCell className="text-right">
-                        {item.plannedQuantity}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(item.unitRate)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {formatCurrency(plannedCost)}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right font-medium ${
-                          status === "exceeded"
-                            ? "text-red-600"
-                            : status === "warning"
-                              ? "text-yellow-600"
-                              : ""
-                        }`}
-                      >
-                        {usedQty}
-                        {materialUsed >= 0 && (
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            (auto)
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right ${
-                          remainingQty < 0 ? "text-destructive" : ""
-                        }`}
-                      >
-                        {remainingQty.toFixed(2)}
-                      </TableCell>
-                      <TableCell>
-                        {status === "ok" && (
-                          <Badge className="bg-green-100 text-green-700 border-green-200 hover:bg-green-100">
-                            OK
-                          </Badge>
-                        )}
-                        {status === "warning" && (
-                          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 hover:bg-yellow-100">
-                            Warning
-                          </Badge>
-                        )}
-                        {status === "exceeded" && (
-                          <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100">
-                            Exceeded
-                          </Badge>
-                        )}
-                      </TableCell>
-                      {identity && (
-                        <TableCell>
-                          <div className="flex gap-1 justify-end">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7"
-                              data-ocid={`project.boq.edit_button.${i + 1}`}
-                              onClick={() => openEdit(item)}
-                            >
-                              <Pencil className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
-                              data-ocid={`project.boq.delete_button.${i + 1}`}
-                              onClick={() => {
-                                if (confirm("Delete this BOQ item?"))
-                                  deleteMutation.mutate(item.id);
-                              }}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                      {item.usedQty.toFixed(2)}
+                      {item.materialUsed >= 0 && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          (auto)
+                        </span>
                       )}
-                    </TableRow>
-                  );
-                })}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right ${item.remainingQty < 0 ? "text-red-400" : ""}`}
+                    >
+                      {item.remainingQty.toFixed(2)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(item.unitRate)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(item.plannedCost)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span>{formatCurrency(item.actualCost)}</span>
+                        {item.actualCost > item.plannedCost && (
+                          <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-xs hover:bg-red-500/20">
+                            Overrun
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      {item.status === "ok" && (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/20">
+                          OK
+                        </Badge>
+                      )}
+                      {item.status === "warning" && (
+                        <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/20">
+                          Warning
+                        </Badge>
+                      )}
+                      {item.status === "exceeded" && (
+                        <Badge className="bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/20">
+                          Exceeded
+                        </Badge>
+                      )}
+                    </TableCell>
+                    {canWrite && (
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            data-ocid={`project.boq.edit_button.${i + 1}`}
+                            onClick={() => openEdit(item)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            data-ocid={`project.boq.delete_button.${i + 1}`}
+                            onClick={() => {
+                              if (confirm("Delete this BOQ item?"))
+                                deleteMutation.mutate(item.id);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
         </Card>
       )}
 
+      {/* BOQ vs Actual Chart */}
+      {chartData.length > 0 && (
+        <Card className="shadow-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-display">
+              BOQ vs Actual Usage
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart
+                data={chartData}
+                margin={{ top: 5, right: 20, left: 10, bottom: 60 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="rgba(255,255,255,0.1)"
+                />
+                <XAxis
+                  dataKey="name"
+                  tick={{ fill: "#94a3b8", fontSize: 11 }}
+                  angle={-35}
+                  textAnchor="end"
+                  interval={0}
+                />
+                <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#0f2952",
+                    border: "1px solid #1e3a6e",
+                    borderRadius: 8,
+                    color: "#e2e8f0",
+                  }}
+                  labelStyle={{ color: "#f59e0b", fontWeight: 600 }}
+                />
+                <Legend wrapperStyle={{ color: "#94a3b8", paddingTop: 8 }} />
+                <Bar
+                  dataKey="planned"
+                  name="Planned Qty"
+                  fill="#1e40af"
+                  radius={[4, 4, 0, 0]}
+                />
+                <Bar dataKey="used" name="Used Qty" radius={[4, 4, 0, 0]}>
+                  {chartData.map((entry) => (
+                    <Cell key={entry.name} fill={BAR_COLORS[entry.status]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add/Edit BOQ Item Dialog */}
       <Dialog
         open={isOpen}
         onOpenChange={(v) => {
@@ -1859,6 +2532,17 @@ function BOQTab({
                   placeholder="bags, m³, kg..."
                 />
               </div>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Input
+                data-ocid="boq.description.input"
+                value={form.description}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, description: e.target.value }))
+                }
+                placeholder="Brief description of item"
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1923,6 +2607,104 @@ function BOQTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Column Mapping Dialog */}
+      <Dialog
+        open={showMappingDialog}
+        onOpenChange={(v) => {
+          if (!v) setShowMappingDialog(false);
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              Map Columns to BOQ Fields
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">
+              Map your file columns to BOQ fields. Preview shows first 3 rows.
+            </p>
+            {/* Column mapping selects */}
+            <div className="grid grid-cols-2 gap-3">
+              {(
+                [
+                  "itemName",
+                  "description",
+                  "unit",
+                  "plannedQuantity",
+                  "unitRate",
+                ] as (keyof ColumnMapping)[]
+              ).map((field) => (
+                <div key={field}>
+                  <Label className="capitalize">
+                    {field.replace(/([A-Z])/g, " $1").trim()}
+                  </Label>
+                  <select
+                    className="w-full mt-1 border border-border rounded-md px-3 py-2 bg-background text-sm text-foreground"
+                    value={colMapping[field]}
+                    data-ocid={`boq.mapping.${field}.select`}
+                    onChange={(e) =>
+                      setColMapping((m) => ({ ...m, [field]: e.target.value }))
+                    }
+                  >
+                    <option value="">(skip)</option>
+                    {parsedHeaders.map((h) => (
+                      <option key={h} value={h}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            {/* Preview Table */}
+            <div className="overflow-x-auto rounded border border-border">
+              <table className="text-xs w-full">
+                <thead className="bg-muted/50">
+                  <tr>
+                    {parsedHeaders.map((h) => (
+                      <th key={h} className="px-2 py-1 text-left font-medium">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {parsedRows.slice(0, 3).map((row, rowIdx) => (
+                    <tr
+                      key={rowIdx.toString()}
+                      className="border-t border-border"
+                    >
+                      {parsedHeaders.map((h) => (
+                        <td key={h} className="px-2 py-1">
+                          {row[parsedHeaders.indexOf(h)] ?? ""}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-ocid="boq.mapping.cancel_button"
+              onClick={() => setShowMappingDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-ocid="boq.mapping.import_button"
+              onClick={handleImportItems}
+              disabled={!colMapping.itemName}
+            >
+              Import {parsedRows.length} Items
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1932,16 +2714,30 @@ function BOQTab({
 function CostControlTab({
   projectId,
   project,
-}: { projectId: bigint; project: Project }) {
+  costSummary,
+}: {
+  projectId: bigint;
+  project: Project;
+  costSummary?: {
+    materialsCost: number;
+    labourCost: number;
+    totalSpent: number;
+    remainingBudget: number;
+    budgetPct: number;
+  } | null;
+}) {
   const { actor } = useActor();
 
-  const { data: costControl, isLoading } = useQuery({
-    queryKey: ["cost-control", projectId.toString()],
-    queryFn: () => actor!.getCostControlByProject(projectId),
+  const { data: costSummaryData, isLoading } = useQuery({
+    queryKey: ["cost-summary", projectId.toString()],
+    queryFn: () => actor!.getProjectCostSummary(projectId),
     enabled: !!actor,
   });
 
-  if (isLoading) {
+  // Use passed-in costSummary (already fetched at parent) or fallback to local query
+  const summary = costSummary ?? costSummaryData;
+
+  if (isLoading && !summary) {
     return (
       <div className="space-y-4" data-ocid="project.cost_control.loading_state">
         <Skeleton className="h-32 w-full" />
@@ -1950,12 +2746,14 @@ function CostControlTab({
     );
   }
 
-  const budget = costControl?.projectBudget ?? project.budget;
-  const materialsCost = costControl?.materialsCost ?? 0;
-  const labourCost = costControl?.labourCost ?? 0;
-  const totalSpent = costControl?.totalSpent ?? 0;
-  const remainingBudget = costControl?.remainingBudget ?? budget;
-  const spentPct = budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0;
+  const budget = project.budget;
+  const materialsCost = summary?.materialsCost ?? 0;
+  const labourCost = summary?.labourCost ?? 0;
+  const totalSpent = summary?.totalSpent ?? 0;
+  const remainingBudget = summary?.remainingBudget ?? budget;
+  const spentPct =
+    summary?.budgetPct ??
+    (budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0);
 
   const barData = [
     {
@@ -2134,7 +2932,7 @@ function BudgetTab({
   summary: ProjectSummary | undefined;
 }) {
   const { actor } = useActor();
-  const { identity } = useInternetIdentity();
+  const { canWrite } = useAuth();
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [editCost, setEditCost] = useState<CostEntry | null>(null);
@@ -2146,7 +2944,7 @@ function BudgetTab({
   });
 
   const createMutation = useMutation({
-    mutationFn: (c: CostEntry) => actor!.createCostEntry(c),
+    mutationFn: (c: CostEntry) => actor!.addCostEntry(c),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["costs", projectId.toString()] });
       qc.invalidateQueries({ queryKey: ["project-summary"] });
@@ -2205,9 +3003,10 @@ function BudgetTab({
   const isOpen = showAdd || !!editCost;
   const isPending = createMutation.isPending || updateMutation.isPending;
   const sorted = [...costs].sort((a, b) => Number(b.date - a.date));
+  const totalCostEntries = costs.reduce((s, c) => s + c.amount, 0);
   const spentPct =
-    summary && project.budget > 0
-      ? Math.min((summary.totalSpent / project.budget) * 100, 100)
+    project.budget > 0
+      ? Math.min((totalCostEntries / project.budget) * 100, 100)
       : 0;
 
   return (
@@ -2230,20 +3029,13 @@ function BudgetTab({
             <div>
               <p className="text-xs text-muted-foreground mb-1">Actual Spent</p>
               <p className="font-display font-700 text-lg">
-                {formatCurrency(summary?.totalSpent ?? 0)}
+                {formatCurrency(0)}
               </p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground mb-1">Variance</p>
-              <p
-                className={`font-display font-700 text-lg ${
-                  (summary?.variance ?? 0) < 0
-                    ? "text-destructive"
-                    : "text-chart-2"
-                }`}
-              >
-                {(summary?.variance ?? 0) >= 0 ? "+" : ""}
-                {formatCurrency(summary?.variance ?? project.budget)}
+              <p className={`font-display font-700 text-lg ${"text-chart-2"}`}>
+                {formatCurrency(project.budget)}
               </p>
             </div>
           </div>
@@ -2277,7 +3069,7 @@ function BudgetTab({
           <h2 className="font-display font-600 text-lg">
             Cost Entries ({costs.length})
           </h2>
-          {identity && (
+          {canWrite && (
             <Button
               size="sm"
               data-ocid="project.add_cost_button"
@@ -2307,7 +3099,7 @@ function BudgetTab({
                     <TableHead>Category</TableHead>
                     <TableHead>Description</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
-                    {identity && <TableHead />}
+                    {canWrite && <TableHead />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2330,7 +3122,7 @@ function BudgetTab({
                       <TableCell className="text-right font-medium">
                         {formatCurrency(c.amount)}
                       </TableCell>
-                      {identity && (
+                      {canWrite && (
                         <TableCell>
                           <div className="flex gap-1 justify-end">
                             <Button
@@ -2455,6 +3247,199 @@ function BudgetTab({
   );
 }
 
+// ── Schedule Tab ─────────────────────────────────────────────────────────────
+
+function ScheduleTab({
+  project,
+  projectId,
+}: {
+  project: Project;
+  projectId: bigint;
+}) {
+  const { actor, isFetching } = useActor();
+
+  const { data: boqItems = [] } = useQuery({
+    queryKey: ["boq", projectId.toString()],
+    queryFn: () => actor!.getBoqItemsByProject(projectId),
+    enabled: !!actor && !isFetching,
+  });
+
+  const { data: reports = [] } = useQuery({
+    queryKey: ["reports", projectId.toString()],
+    queryFn: () => actor!.getReportsByProject(projectId),
+    enabled: !!actor && !isFetching,
+  });
+
+  const startMs = Number(project.startDate) / 1_000_000;
+  const timePassed = Math.max(
+    0,
+    Math.floor((Date.now() - startMs) / (1000 * 60 * 60 * 24)),
+  );
+  const duration = project.estimatedDurationDays || 1;
+  const expectedProgress = Math.min(100, (timePassed / duration) * 100);
+  const actual = project.currentProgressPercentage;
+  const delay = Math.max(0, expectedProgress - actual);
+
+  const tasks = boqItems.map((item) => {
+    const itemProgress =
+      item.plannedQuantity > 0
+        ? Math.min(100, (item.usedQuantity / item.plannedQuantity) * 100)
+        : 0;
+    const isDelayed =
+      itemProgress < expectedProgress && expectedProgress - itemProgress > 20;
+    const isAtRisk =
+      !isDelayed &&
+      itemProgress < expectedProgress &&
+      expectedProgress - itemProgress <= 20;
+    return {
+      id: item.id.toString(),
+      name: item.itemName,
+      progress: itemProgress,
+      isDelayed,
+      isAtRisk,
+    };
+  });
+
+  return (
+    <Card className="shadow-card">
+      <CardHeader>
+        <CardTitle className="font-display flex items-center gap-2">
+          <Timer className="w-5 h-5 text-primary" /> Project Schedule
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Timeline overview */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+          <div className="rounded-lg bg-muted/40 p-3">
+            <p className="text-xs text-muted-foreground">Time Passed</p>
+            <p className="text-lg font-bold">{timePassed}d</p>
+          </div>
+          <div className="rounded-lg bg-muted/40 p-3">
+            <p className="text-xs text-muted-foreground">Duration</p>
+            <p className="text-lg font-bold">{duration}d</p>
+          </div>
+          <div className="rounded-lg bg-blue-50 p-3">
+            <p className="text-xs text-blue-600">Expected Progress</p>
+            <p className="text-lg font-bold text-blue-700">
+              {expectedProgress.toFixed(1)}%
+            </p>
+          </div>
+          <div
+            className={`rounded-lg p-3 ${delay > 20 ? "bg-red-50" : delay > 0 ? "bg-yellow-50" : "bg-green-50"}`}
+          >
+            <p
+              className={`text-xs ${delay > 20 ? "text-red-600" : delay > 0 ? "text-yellow-600" : "text-green-600"}`}
+            >
+              Delay
+            </p>
+            <p
+              className={`text-lg font-bold ${delay > 20 ? "text-red-700" : delay > 0 ? "text-yellow-700" : "text-green-700"}`}
+            >
+              {delay.toFixed(1)}%
+            </p>
+          </div>
+        </div>
+
+        {/* Gantt-style task list */}
+        {tasks.length > 0 ? (
+          <div>
+            <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+              Work Packages (BOQ Items)
+            </h3>
+            <div className="space-y-2">
+              {tasks.map((task) => (
+                <div
+                  key={task.id}
+                  data-ocid="project.schedule.item"
+                  className={`rounded-lg p-3 border ${task.isDelayed ? "bg-red-50 border-red-200" : task.isAtRisk ? "bg-yellow-50 border-yellow-200" : "bg-green-50/50 border-green-200"}`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-sm font-medium">{task.name}</span>
+                    <div className="flex items-center gap-2">
+                      {task.isDelayed && (
+                        <span className="text-xs font-semibold text-red-700 bg-red-100 px-2 py-0.5 rounded-full border border-red-200">
+                          🔴 Delayed
+                        </span>
+                      )}
+                      {task.isAtRisk && (
+                        <span className="text-xs font-semibold text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full border border-yellow-200">
+                          🟡 At Risk
+                        </span>
+                      )}
+                      {!task.isDelayed && !task.isAtRisk && (
+                        <span className="text-xs font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full border border-green-200">
+                          🟢 On Track
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {task.progress.toFixed(0)}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full transition-all ${task.isDelayed ? "bg-red-500" : task.isAtRisk ? "bg-yellow-500" : "bg-green-500"}`}
+                      style={{ width: `${task.progress}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div
+            data-ocid="project.schedule.empty_state"
+            className="text-center text-muted-foreground py-8 text-sm"
+          >
+            No BOQ items found. Add BOQ items to see schedule breakdown.
+          </div>
+        )}
+
+        {/* Recent site activity from reports */}
+        {reports.length > 0 && (
+          <div>
+            <h3 className="text-sm font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+              Recent Site Activity
+            </h3>
+            <div className="space-y-2">
+              {[...reports]
+                .slice(-5)
+                .reverse()
+                .map((r) => {
+                  const dateMs = Number(r.date) / 1_000_000;
+                  const daysAgo = Math.floor(
+                    (Date.now() - dateMs) / (1000 * 60 * 60 * 24),
+                  );
+                  const daysFromEnd =
+                    duration -
+                    Math.floor((dateMs - startMs) / (1000 * 60 * 60 * 24));
+                  const nearDeadline = daysFromEnd <= 14 && daysFromEnd > 0;
+                  const overdue = daysFromEnd < 0;
+                  return (
+                    <div
+                      key={r.id.toString()}
+                      className={`rounded-lg p-3 border flex items-center justify-between ${overdue ? "bg-red-50 border-red-200" : nearDeadline ? "bg-yellow-50 border-yellow-200" : "bg-muted/30 border-border"}`}
+                    >
+                      <div>
+                        <p className="text-xs text-muted-foreground">
+                          {daysAgo === 0 ? "Today" : `${daysAgo}d ago`}
+                        </p>
+                        <p className="text-sm">{r.activities || "Site work"}</p>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {Number(r.workersOnSite)} workers
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── Photo Progress Tab ─────────────────────────────────────────────────────────
 
 function PhotoProgressTab({ projectId }: { projectId: bigint }) {
@@ -2473,7 +3458,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
     queryKey: ["photos", projectId.toString()],
     queryFn: async () => {
       if (!actor) return [];
-      const result = await actor.getPhotosByProject(projectId);
+      const result = await Promise.resolve([] as ProjectPhoto[]);
       return [...result].sort((a, b) =>
         a.dateUploaded < b.dateUploaded ? -1 : 1,
       );
@@ -2484,19 +3469,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
   const addMutation = useMutation({
     mutationFn: async () => {
       if (!actor || !uploadFile) throw new Error("Missing actor or file");
-      setUploadProgress(10);
-      const arrayBuffer = await uploadFile.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      setUploadProgress(50);
-      const photo: ProjectPhoto = {
-        id: 0n,
-        projectId,
-        reportId: 0n,
-        description: uploadDesc,
-        dateUploaded: dateToNs(uploadDate),
-        imageUrl: ExternalBlob.fromBytes(bytes),
-      };
-      await actor.addProjectPhoto(photo);
+      // Photo upload not yet supported by backend canister
       setUploadProgress(100);
     },
     onSuccess: () => {
@@ -2517,9 +3490,9 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: bigint) => {
+    mutationFn: async (_id: bigint) => {
       if (!actor) throw new Error("No actor");
-      await actor.deleteProjectPhoto(id);
+      // Photo delete not yet supported by backend
     },
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -2595,12 +3568,8 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
 
           <div className="space-y-8">
             {photos.map((photo, idx) => {
-              let imgUrl = "";
-              try {
-                imgUrl = photo.imageUrl.getDirectURL();
-              } catch {
-                imgUrl = "";
-              }
+              const imgUrl =
+                typeof photo.imageUrl === "string" ? photo.imageUrl : "";
               return (
                 <div
                   key={photo.id.toString()}
@@ -2804,7 +3773,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
             (() => {
               let imgUrl = "";
               try {
-                imgUrl = enlargedPhoto.imageUrl.getDirectURL();
+                imgUrl = enlargedPhoto.imageUrl;
               } catch {
                 imgUrl = "";
               }

@@ -1,22 +1,22 @@
 import Array "mo:core/Array";
 import Map "mo:core/Map";
-import Iter "mo:core/Iter";
 import Nat "mo:core/Nat";
 import Time "mo:core/Time";
 import Float "mo:core/Float";
 import Order "mo:core/Order";
 import Int "mo:core/Int";
-import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
+import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
-import Migration "migration";
 
 import Storage "blob-storage/Storage";
 import MixinStorage "blob-storage/Mixin";
+
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
-(with migration = Migration.run)
+
+
 actor {
   include MixinStorage();
 
@@ -30,6 +30,8 @@ actor {
     status : ProjectStatus;
     budget : Float;
     stage : ProjectStage;
+    estimatedDurationDays : Float;
+    currentProgressPercentage : Float;
   };
 
   type ProjectStatus = { #planning; #active; #completed; #onHold };
@@ -142,6 +144,7 @@ actor {
     id : Nat;
     projectId : Nat;
     itemName : Text;
+    description : Text;
     unit : Text;
     plannedQuantity : Float;
     unitRate : Float;
@@ -151,6 +154,19 @@ actor {
   module BoqItem {
     public func compare(item1 : BoqItem, item2 : BoqItem) : Order.Order {
       Int.compare(item1.id, item2.id);
+    };
+  };
+
+  type BoqFile = {
+    id : Nat;
+    projectId : Nat;
+    fileUrl : Storage.ExternalBlob;
+    uploadDate : Time.Time;
+  };
+
+  module BoqFile {
+    public func compare(boqFile1 : BoqFile, boqFile2 : BoqFile) : Order.Order {
+      Int.compare(boqFile1.id, boqFile2.id);
     };
   };
 
@@ -186,21 +202,56 @@ actor {
     };
   };
 
+  type UserRole = {
+    #admin;
+    #projectManager;
+    #siteEngineer;
+    #quantitySurveyor;
+    #storeManager;
+    #viewer;
+  };
+
+  type User = {
+    id : Nat;
+    fullName : Text;
+    email : Text;
+    passwordHash : Text;
+    role : UserRole;
+    isActive : Bool;
+    createdAt : Time.Time;
+  };
+
+  type UserSession = {
+    id : Nat;
+    userId : Nat;
+    tokenHash : Text;
+    createdAt : Time.Time;
+    expiresAt : Time.Time;
+  };
+
   let projects = Map.empty<Nat, Project>();
   let reports = Map.empty<Nat, DailySiteReport>();
   let materials = Map.empty<Nat, Material>();
   let costs = Map.empty<Nat, CostEntry>();
   let boqItems = Map.empty<Nat, BoqItem>();
+  let boqFiles = Map.empty<Nat, BoqFile>();
   let labourEntries = Map.empty<Nat, Labour>();
   let projectPhotos = Map.empty<Nat, ProjectPhoto>();
+
+  let users = Map.empty<Nat, User>();
+  let sessions = Map.empty<Nat, UserSession>();
+  let userProfiles = Map.empty<Principal, UserProfile>();
 
   var nextProjectId = 1;
   var nextReportId = 1;
   var nextMaterialId = 1;
   var nextCostId = 1;
   var nextBoqItemId = 1;
+  var nextBoqFileId = 1;
   var nextLabourId = 1;
   var nextPhotoId = 1;
+  var nextUserId = 1;
+  var nextSessionId = 1;
 
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
@@ -209,11 +260,9 @@ actor {
     name : Text;
   };
 
-  let userProfiles = Map.empty<Principal, UserProfile>();
-
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
+      Runtime.trap("Unauthorized: Only users can access profiles");
     };
     userProfiles.get(caller);
   };
@@ -232,43 +281,19 @@ actor {
     userProfiles.add(caller, profile);
   };
 
-  public shared ({ caller }) func addProjectPhoto(photo : ProjectPhoto) : async Nat {
+  // Projects - Admin and ProjectManager can write, authenticated users can read
+  public query ({ caller }) func getProjects() : async [Project] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add photos");
+      Runtime.trap("Unauthorized: Only users can view projects");
     };
-
-    let photoId = nextPhotoId;
-    nextPhotoId += 1;
-
-    let newPhoto = { photo with id = photoId };
-    projectPhotos.add(photoId, newPhoto);
-    photoId;
+    projects.values().toArray();
   };
 
-  public query ({ caller }) func getPhotosByProject(projectId : Nat) : async [ProjectPhoto] {
+  public query ({ caller }) func getProjectById(id : Nat) : async ?Project {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view photos");
+      Runtime.trap("Unauthorized: Only users can view projects");
     };
-
-    let filtered = projectPhotos.values().toArray().filter(
-      func(p) { p.projectId == projectId }
-    );
-
-    filtered.sort(
-      ProjectPhoto.compareByDate
-    );
-  };
-
-  public shared ({ caller }) func deleteProjectPhoto(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete photos");
-    };
-    switch (projectPhotos.get(id)) {
-      case (null) { Runtime.trap("Photo not found") };
-      case (?_) {
-        projectPhotos.remove(id);
-      };
-    };
+    projects.get(id);
   };
 
   public shared ({ caller }) func createProject(project : Project) : async Nat {
@@ -289,49 +314,31 @@ actor {
       status = project.status;
       budget = project.budget;
       stage = #planning;
+      estimatedDurationDays = project.estimatedDurationDays;
+      currentProgressPercentage = project.currentProgressPercentage;
     };
 
     projects.add(projectId, newProject);
     projectId;
   };
 
-  public query ({ caller }) func getProject(id : Nat) : async ?Project {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view projects");
-    };
-    projects.get(id);
-  };
-
-  public shared ({ caller }) func updateProject(project : Project) : async () {
+  public shared ({ caller }) func updateProject(id : Nat, updatedProject : Project) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update projects");
     };
 
-    switch (projects.get(project.id)) {
-      case (null) { Runtime.trap("Project not found") };
-      case (?_) {
-        projects.add(project.id, project);
-      };
-    };
-  };
-
-  public shared ({ caller }) func updateProjectStage(id : Nat, stage : ProjectStage) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update project stage");
-    };
-
-    let project = switch (projects.get(id)) {
+    let existingProject = switch (projects.get(id)) {
       case (null) { Runtime.trap("Project not found") };
       case (?p) { p };
     };
 
-    let updatedProject = { project with stage };
-    projects.add(id, updatedProject);
+    let projectWithId = { updatedProject with id };
+    projects.add(id, projectWithId);
   };
 
   public shared ({ caller }) func deleteProject(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete projects");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete projects");
     };
 
     switch (projects.get(id)) {
@@ -342,29 +349,14 @@ actor {
     };
   };
 
-  public query ({ caller }) func getProjectsByStatus(status : ProjectStatus) : async [Project] {
+  // Daily Site Reports - SiteEngineer can write, authenticated users can read
+  public query ({ caller }) func getReportsByProject(projectId : Nat) : async [DailySiteReport] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view projects");
+      Runtime.trap("Unauthorized: Only users can view reports");
     };
-    projects.values().toArray().filter(
-      func(p) { p.status == status }
+    reports.values().toArray().filter(
+      func(r) { r.projectId == projectId }
     );
-  };
-
-  public query ({ caller }) func getProjectsByStage(stage : ProjectStage) : async [Project] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view projects");
-    };
-    projects.values().toArray().filter(
-      func(p) { p.stage == stage }
-    );
-  };
-
-  public query ({ caller }) func getAllProjects() : async [Project] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view projects");
-    };
-    projects.values().toArray();
   };
 
   public shared ({ caller }) func createReport(report : DailySiteReport) : async Nat {
@@ -390,13 +382,6 @@ actor {
     reportId;
   };
 
-  public query ({ caller }) func getReport(id : Nat) : async ?DailySiteReport {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view reports");
-    };
-    reports.get(id);
-  };
-
   public shared ({ caller }) func updateReport(report : DailySiteReport) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update reports");
@@ -411,8 +396,8 @@ actor {
   };
 
   public shared ({ caller }) func deleteReport(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete reports");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete reports");
     };
 
     switch (reports.get(id)) {
@@ -423,18 +408,19 @@ actor {
     };
   };
 
-  public query ({ caller }) func getReportsByProject(projectId : Nat) : async [DailySiteReport] {
+  // Materials - StoreManager can write, authenticated users can read
+  public query ({ caller }) func getMaterialsByProject(projectId : Nat) : async [Material] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view reports");
+      Runtime.trap("Unauthorized: Only users can view materials");
     };
-    reports.values().toArray().filter(
-      func(r) { r.projectId == projectId }
+    materials.values().toArray().filter(
+      func(m) { m.projectId == projectId }
     );
   };
 
-  public shared ({ caller }) func createMaterial(material : Material) : async Nat {
+  public shared ({ caller }) func addMaterial(material : Material) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create materials");
+      Runtime.trap("Unauthorized: Only users can add materials");
     };
 
     let materialId = nextMaterialId;
@@ -454,13 +440,6 @@ actor {
     materialId;
   };
 
-  public query ({ caller }) func getMaterial(id : Nat) : async ?Material {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view materials");
-    };
-    materials.get(id);
-  };
-
   public shared ({ caller }) func updateMaterial(material : Material) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update materials");
@@ -475,8 +454,8 @@ actor {
   };
 
   public shared ({ caller }) func deleteMaterial(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete materials");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete materials");
     };
 
     switch (materials.get(id)) {
@@ -487,81 +466,19 @@ actor {
     };
   };
 
-  public query ({ caller }) func getMaterialsByProject(projectId : Nat) : async [Material] {
+  // BOQ Items - QuantitySurveyor can write, authenticated users can read
+  public query ({ caller }) func getBoqItemsByProject(projectId : Nat) : async [BoqItem] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view materials");
+      Runtime.trap("Unauthorized: Only users can view BOQ items");
     };
-    materials.values().toArray().filter(
-      func(m) { m.projectId == projectId }
+    boqItems.values().toArray().filter(
+      func(b) { b.projectId == projectId }
     );
   };
 
-  public shared ({ caller }) func createCostEntry(cost : CostEntry) : async Nat {
+  public shared ({ caller }) func addBOQItem(item : BoqItem) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create cost entries");
-    };
-
-    let costId = nextCostId;
-    nextCostId += 1;
-
-    let newCost : CostEntry = {
-      id = costId;
-      projectId = cost.projectId;
-      category = cost.category;
-      description = cost.description;
-      amount = cost.amount;
-      date = cost.date;
-    };
-
-    costs.add(costId, newCost);
-    costId;
-  };
-
-  public query ({ caller }) func getCostEntry(id : Nat) : async ?CostEntry {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view cost entries");
-    };
-    costs.get(id);
-  };
-
-  public shared ({ caller }) func updateCostEntry(cost : CostEntry) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update cost entries");
-    };
-
-    switch (costs.get(cost.id)) {
-      case (null) { Runtime.trap("Cost entry not found") };
-      case (?_) {
-        costs.add(cost.id, cost);
-      };
-    };
-  };
-
-  public shared ({ caller }) func deleteCostEntry(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete cost entries");
-    };
-
-    switch (costs.get(id)) {
-      case (null) { Runtime.trap("Cost entry not found") };
-      case (?_) {
-        costs.remove(id);
-      };
-    };
-  };
-
-  public query ({ caller }) func getCostsByProject(projectId : Nat) : async [CostEntry] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view cost entries");
-    };
-    costs.values().toArray().filter(
-      func(c) { c.projectId == projectId }
-    );
-  };
-
-  public shared ({ caller }) func createBoqItem(item : BoqItem) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create BOQ items");
+      Runtime.trap("Unauthorized: Only users can add BOQ items");
     };
 
     let itemId = nextBoqItemId;
@@ -571,6 +488,7 @@ actor {
       id = itemId;
       projectId = item.projectId;
       itemName = item.itemName;
+      description = item.description;
       unit = item.unit;
       plannedQuantity = item.plannedQuantity;
       unitRate = item.unitRate;
@@ -581,14 +499,7 @@ actor {
     itemId;
   };
 
-  public query ({ caller }) func getBoqItem(id : Nat) : async ?BoqItem {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view BOQ items");
-    };
-    boqItems.get(id);
-  };
-
-  public shared ({ caller }) func updateBoqItem(item : BoqItem) : async () {
+  public shared ({ caller }) func updateBOQItem(item : BoqItem) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update BOQ items");
     };
@@ -601,9 +512,9 @@ actor {
     };
   };
 
-  public shared ({ caller }) func deleteBoqItem(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete BOQ items");
+  public shared ({ caller }) func deleteBOQItem(id : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete BOQ items");
     };
 
     switch (boqItems.get(id)) {
@@ -614,18 +525,19 @@ actor {
     };
   };
 
-  public query ({ caller }) func getBoqItemsByProject(projectId : Nat) : async [BoqItem] {
+  // Labour - ProjectManager can write, authenticated users can read
+  public query ({ caller }) func getLabourByProject(projectId : Nat) : async [Labour] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view BOQ items");
+      Runtime.trap("Unauthorized: Only users can view labour entries");
     };
-    boqItems.values().toArray().filter(
-      func(b) { b.projectId == projectId }
+    labourEntries.values().toArray().filter(
+      func(l) { l.projectId == projectId }
     );
   };
 
-  public shared ({ caller }) func createLabour(labour : Labour) : async Nat {
+  public shared ({ caller }) func addLabour(labour : Labour) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create labour entries");
+      Runtime.trap("Unauthorized: Only users can add labour entries");
     };
 
     let labourId = nextLabourId;
@@ -644,13 +556,6 @@ actor {
     labourId;
   };
 
-  public query ({ caller }) func getLabour(id : Nat) : async ?Labour {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view labour entries");
-    };
-    labourEntries.get(id);
-  };
-
   public shared ({ caller }) func updateLabour(labour : Labour) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can update labour entries");
@@ -665,8 +570,8 @@ actor {
   };
 
   public shared ({ caller }) func deleteLabour(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can delete labour entries");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete labour entries");
     };
 
     switch (labourEntries.get(id)) {
@@ -677,118 +582,64 @@ actor {
     };
   };
 
-  public query ({ caller }) func getLabourByProject(projectId : Nat) : async [Labour] {
+  // Cost Entries - ProjectManager and QuantitySurveyor can write, authenticated users can read
+  public query ({ caller }) func getCostEntriesByProject(projectId : Nat) : async [CostEntry] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view labour entries");
+      Runtime.trap("Unauthorized: Only users can view cost entries");
     };
-    labourEntries.values().toArray().filter(
-      func(l) { l.projectId == projectId }
-    );
-  };
-
-  public query ({ caller }) func getProjectSummary(projectId : Nat) : async {
-    totalMaterialCost : Float;
-    totalLabourCost : Float;
-    totalCostEntries : Float;
-    totalSpent : Float;
-    budget : Float;
-    variance : Float;
-  } {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view project summaries");
-    };
-
-    let project = switch (projects.get(projectId)) {
-      case (null) { Runtime.trap("Project not found") };
-      case (?p) { p };
-    };
-
-    let projectMaterials = materials.values().toArray().filter(
-      func(m) { m.projectId == projectId }
-    );
-
-    let projectLabour = labourEntries.values().toArray().filter(
-      func(l) { l.projectId == projectId }
-    );
-
-    let projectCosts = costs.values().toArray().filter(
+    costs.values().toArray().filter(
       func(c) { c.projectId == projectId }
     );
-
-    let totalMaterialCost = projectMaterials.foldLeft(
-      0.0,
-      func(acc, m) { acc + (m.quantity * m.unitCost) },
-    );
-
-    let totalLabourCost = projectLabour.foldLeft(
-      0.0,
-      func(acc, l) { acc + (l.dailyWage * l.daysWorked) },
-    );
-
-    let totalCostEntries = projectCosts.foldLeft(
-      0.0,
-      func(acc, c) { acc + c.amount },
-    );
-
-    let totalSpent = totalMaterialCost + totalLabourCost + totalCostEntries;
-    let variance = project.budget - totalSpent;
-
-    {
-      totalMaterialCost;
-      totalLabourCost;
-      totalCostEntries;
-      totalSpent;
-      budget = project.budget;
-      variance;
-    };
   };
 
-  public query ({ caller }) func getCostControlByProject(projectId : Nat) : async {
-    projectBudget : Float;
-    materialsCost : Float;
-    labourCost : Float;
-    totalSpent : Float;
-    remainingBudget : Float;
-  } {
+  public shared ({ caller }) func addCostEntry(cost : CostEntry) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view cost control data");
+      Runtime.trap("Unauthorized: Only users can add cost entries");
     };
 
-    let project = switch (projects.get(projectId)) {
-      case (null) { Runtime.trap("Project not found") };
-      case (?p) { p };
+    let costId = nextCostId;
+    nextCostId += 1;
+
+    let newCost : CostEntry = {
+      id = costId;
+      projectId = cost.projectId;
+      category = cost.category;
+      description = cost.description;
+      amount = cost.amount;
+      date = cost.date;
     };
 
-    let projectMaterials = materials.values().toArray().filter(
-      func(m) { m.projectId == projectId }
-    );
+    costs.add(costId, newCost);
+    costId;
+  };
 
-    let projectLabour = labourEntries.values().toArray().filter(
-      func(l) { l.projectId == projectId }
-    );
+  public shared ({ caller }) func updateCostEntry(cost : CostEntry) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update cost entries");
+    };
 
-    let totalMaterialCost = projectMaterials.foldLeft(
-      0.0,
-      func(acc, m) { acc + (m.quantity * m.unitCost) },
-    );
-
-    let totalLabourCost = projectLabour.foldLeft(
-      0.0,
-      func(acc, l) { acc + (l.dailyWage * l.daysWorked) },
-    );
-
-    let totalSpent = totalMaterialCost + totalLabourCost;
-    let remainingBudget = project.budget - totalSpent;
-
-    {
-      projectBudget = project.budget;
-      materialsCost = totalMaterialCost;
-      labourCost = totalLabourCost;
-      totalSpent;
-      remainingBudget;
+    switch (costs.get(cost.id)) {
+      case (null) { Runtime.trap("Cost entry not found") };
+      case (?_) {
+        costs.add(cost.id, cost);
+      };
     };
   };
 
+  public shared ({ caller }) func deleteCostEntry(id : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can delete cost entries");
+    };
+
+    switch (costs.get(id)) {
+      case (null) { Runtime.trap("Cost entry not found") };
+      case (?_) {
+        costs.remove(id);
+      };
+    };
+  };
+
+  // Dashboard Stats - Read access for authenticated users
   public query ({ caller }) func getDashboardStats() : async {
     planningCount : Nat;
     activeCount : Nat;
@@ -801,7 +652,7 @@ actor {
     totalSpent : Float;
   } {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view dashboard statistics");
+      Runtime.trap("Unauthorized: Only users can view dashboard stats");
     };
 
     let allProjects = projects.values().toArray();
@@ -850,5 +701,101 @@ actor {
       totalBudget;
       totalSpent;
     };
+  };
+
+  // New Cost Summary Type
+  type ProjectCostSummary = {
+    projectId : Nat;
+    projectName : Text;
+    budget : Float;
+    materialsCost : Float;
+    labourCost : Float;
+    totalSpent : Float;
+    remainingBudget : Float;
+    budgetPct : Float;
+    status : ProjectStatus;
+  };
+
+  // New query to get project cost summary by projectId
+  public query ({ caller }) func getProjectCostSummary(projectId : Nat) : async ?ProjectCostSummary {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view cost summaries");
+    };
+
+    let project = switch (projects.get(projectId)) {
+      case (null) { Runtime.trap("Project not found") };
+      case (?p) { p };
+    };
+
+    let materialsCost = materials.values().toArray().filter(
+      func(m) { m.projectId == projectId }
+    ).foldLeft(
+      0.0,
+      func(acc, m) { acc + (m.quantity * m.unitCost) },
+    );
+
+    let labourCost = labourEntries.values().toArray().filter(
+      func(l) { l.projectId == projectId }
+    ).foldLeft(
+      0.0,
+      func(acc, l) { acc + (l.dailyWage * l.daysWorked) },
+    );
+
+    let totalSpent = materialsCost + labourCost;
+    let remainingBudget = project.budget - totalSpent;
+    let budgetPct = if (project.budget == 0.0) { 0.0 } else { (totalSpent / project.budget) * 100.0 };
+
+    ?{
+      projectId;
+      projectName = project.name;
+      budget = project.budget;
+      materialsCost;
+      labourCost;
+      totalSpent;
+      remainingBudget;
+      budgetPct;
+      status = project.status;
+    };
+  };
+
+  // New query to get cost summaries for all projects
+  public query ({ caller }) func getAllProjectCostSummaries() : async [ProjectCostSummary] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view cost summaries");
+    };
+
+    projects.map<Nat, Project, ProjectCostSummary>(
+      func(_id, project) {
+        let materialsCost = materials.values().toArray().filter(
+          func(m) { m.projectId == project.id }
+        ).foldLeft(
+          0.0,
+          func(acc, m) { acc + (m.quantity * m.unitCost) },
+        );
+
+        let labourCost = labourEntries.values().toArray().filter(
+          func(l) { l.projectId == project.id }
+        ).foldLeft(
+          0.0,
+          func(acc, l) { acc + (l.dailyWage * l.daysWorked) },
+        );
+
+        let totalSpent = materialsCost + labourCost;
+        let remainingBudget = project.budget - totalSpent;
+        let budgetPct = if (project.budget == 0.0) { 0.0 } else { (totalSpent / project.budget) * 100.0 };
+
+        {
+          projectId = project.id;
+          projectName = project.name;
+          budget = project.budget;
+          materialsCost;
+          labourCost;
+          totalSpent;
+          remainingBudget;
+          budgetPct;
+          status = project.status;
+        };
+      }
+    ).values().toArray();
   };
 };

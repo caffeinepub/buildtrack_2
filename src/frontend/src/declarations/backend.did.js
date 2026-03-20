@@ -19,30 +19,17 @@ export const _CaffeineStorageRefillResult = IDL.Record({
   'success' : IDL.Opt(IDL.Bool),
   'topped_up_amount' : IDL.Opt(IDL.Nat),
 });
-export const Time = IDL.Int;
-export const ExternalBlob = IDL.Vec(IDL.Nat8);
-export const ProjectPhoto = IDL.Record({
-  'id' : IDL.Nat,
-  'description' : IDL.Text,
-  'dateUploaded' : Time,
-  'imageUrl' : ExternalBlob,
-  'projectId' : IDL.Nat,
-  'reportId' : IDL.Nat,
-});
-export const UserRole = IDL.Variant({
-  'admin' : IDL.Null,
-  'user' : IDL.Null,
-  'guest' : IDL.Null,
-});
 export const BoqItem = IDL.Record({
   'id' : IDL.Nat,
   'plannedQuantity' : IDL.Float64,
   'unit' : IDL.Text,
+  'description' : IDL.Text,
   'projectId' : IDL.Nat,
   'itemName' : IDL.Text,
   'usedQuantity' : IDL.Float64,
   'unitRate' : IDL.Float64,
 });
+export const Time = IDL.Int;
 export const CostEntry = IDL.Record({
   'id' : IDL.Nat,
   'date' : Time,
@@ -68,6 +55,11 @@ export const Material = IDL.Record({
   'quantity' : IDL.Float64,
   'unitCost' : IDL.Float64,
 });
+export const UserRole = IDL.Variant({
+  'admin' : IDL.Null,
+  'user' : IDL.Null,
+  'guest' : IDL.Null,
+});
 export const ProjectStatus = IDL.Variant({
   'active' : IDL.Null,
   'completed' : IDL.Null,
@@ -83,10 +75,12 @@ export const ProjectStage = IDL.Variant({
 });
 export const Project = IDL.Record({
   'id' : IDL.Nat,
+  'estimatedDurationDays' : IDL.Float64,
   'status' : ProjectStatus,
   'endDate' : Time,
   'name' : IDL.Text,
   'description' : IDL.Text,
+  'currentProgressPercentage' : IDL.Float64,
   'stage' : ProjectStage,
   'budget' : IDL.Float64,
   'location' : IDL.Text,
@@ -101,6 +95,17 @@ export const DailySiteReport = IDL.Record({
   'projectId' : IDL.Nat,
   'notes' : IDL.Text,
   'weather' : IDL.Text,
+});
+export const ProjectCostSummary = IDL.Record({
+  'status' : ProjectStatus,
+  'remainingBudget' : IDL.Float64,
+  'projectName' : IDL.Text,
+  'totalSpent' : IDL.Float64,
+  'labourCost' : IDL.Float64,
+  'projectId' : IDL.Nat,
+  'materialsCost' : IDL.Float64,
+  'budgetPct' : IDL.Float64,
+  'budget' : IDL.Float64,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
 
@@ -132,41 +137,32 @@ export const idlService = IDL.Service({
     ),
   '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-  'addProjectPhoto' : IDL.Func([ProjectPhoto], [IDL.Nat], []),
+  'addBOQItem' : IDL.Func([BoqItem], [IDL.Nat], []),
+  'addCostEntry' : IDL.Func([CostEntry], [IDL.Nat], []),
+  'addLabour' : IDL.Func([Labour], [IDL.Nat], []),
+  'addMaterial' : IDL.Func([Material], [IDL.Nat], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-  'createBoqItem' : IDL.Func([BoqItem], [IDL.Nat], []),
-  'createCostEntry' : IDL.Func([CostEntry], [IDL.Nat], []),
-  'createLabour' : IDL.Func([Labour], [IDL.Nat], []),
-  'createMaterial' : IDL.Func([Material], [IDL.Nat], []),
   'createProject' : IDL.Func([Project], [IDL.Nat], []),
   'createReport' : IDL.Func([DailySiteReport], [IDL.Nat], []),
-  'deleteBoqItem' : IDL.Func([IDL.Nat], [], []),
+  'deleteBOQItem' : IDL.Func([IDL.Nat], [], []),
   'deleteCostEntry' : IDL.Func([IDL.Nat], [], []),
   'deleteLabour' : IDL.Func([IDL.Nat], [], []),
   'deleteMaterial' : IDL.Func([IDL.Nat], [], []),
   'deleteProject' : IDL.Func([IDL.Nat], [], []),
-  'deleteProjectPhoto' : IDL.Func([IDL.Nat], [], []),
   'deleteReport' : IDL.Func([IDL.Nat], [], []),
-  'getAllProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
-  'getBoqItem' : IDL.Func([IDL.Nat], [IDL.Opt(BoqItem)], ['query']),
+  'getAllProjectCostSummaries' : IDL.Func(
+      [],
+      [IDL.Vec(ProjectCostSummary)],
+      ['query'],
+    ),
   'getBoqItemsByProject' : IDL.Func([IDL.Nat], [IDL.Vec(BoqItem)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
-  'getCostControlByProject' : IDL.Func(
+  'getCostEntriesByProject' : IDL.Func(
       [IDL.Nat],
-      [
-        IDL.Record({
-          'remainingBudget' : IDL.Float64,
-          'projectBudget' : IDL.Float64,
-          'totalSpent' : IDL.Float64,
-          'labourCost' : IDL.Float64,
-          'materialsCost' : IDL.Float64,
-        }),
-      ],
+      [IDL.Vec(CostEntry)],
       ['query'],
     ),
-  'getCostEntry' : IDL.Func([IDL.Nat], [IDL.Opt(CostEntry)], ['query']),
-  'getCostsByProject' : IDL.Func([IDL.Nat], [IDL.Vec(CostEntry)], ['query']),
   'getDashboardStats' : IDL.Func(
       [],
       [
@@ -184,41 +180,15 @@ export const idlService = IDL.Service({
       ],
       ['query'],
     ),
-  'getLabour' : IDL.Func([IDL.Nat], [IDL.Opt(Labour)], ['query']),
   'getLabourByProject' : IDL.Func([IDL.Nat], [IDL.Vec(Labour)], ['query']),
-  'getMaterial' : IDL.Func([IDL.Nat], [IDL.Opt(Material)], ['query']),
   'getMaterialsByProject' : IDL.Func([IDL.Nat], [IDL.Vec(Material)], ['query']),
-  'getPhotosByProject' : IDL.Func(
+  'getProjectById' : IDL.Func([IDL.Nat], [IDL.Opt(Project)], ['query']),
+  'getProjectCostSummary' : IDL.Func(
       [IDL.Nat],
-      [IDL.Vec(ProjectPhoto)],
+      [IDL.Opt(ProjectCostSummary)],
       ['query'],
     ),
-  'getProject' : IDL.Func([IDL.Nat], [IDL.Opt(Project)], ['query']),
-  'getProjectSummary' : IDL.Func(
-      [IDL.Nat],
-      [
-        IDL.Record({
-          'totalMaterialCost' : IDL.Float64,
-          'totalCostEntries' : IDL.Float64,
-          'totalLabourCost' : IDL.Float64,
-          'variance' : IDL.Float64,
-          'totalSpent' : IDL.Float64,
-          'budget' : IDL.Float64,
-        }),
-      ],
-      ['query'],
-    ),
-  'getProjectsByStage' : IDL.Func(
-      [ProjectStage],
-      [IDL.Vec(Project)],
-      ['query'],
-    ),
-  'getProjectsByStatus' : IDL.Func(
-      [ProjectStatus],
-      [IDL.Vec(Project)],
-      ['query'],
-    ),
-  'getReport' : IDL.Func([IDL.Nat], [IDL.Opt(DailySiteReport)], ['query']),
+  'getProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
   'getReportsByProject' : IDL.Func(
       [IDL.Nat],
       [IDL.Vec(DailySiteReport)],
@@ -231,12 +201,11 @@ export const idlService = IDL.Service({
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-  'updateBoqItem' : IDL.Func([BoqItem], [], []),
+  'updateBOQItem' : IDL.Func([BoqItem], [], []),
   'updateCostEntry' : IDL.Func([CostEntry], [], []),
   'updateLabour' : IDL.Func([Labour], [], []),
   'updateMaterial' : IDL.Func([Material], [], []),
-  'updateProject' : IDL.Func([Project], [], []),
-  'updateProjectStage' : IDL.Func([IDL.Nat, ProjectStage], [], []),
+  'updateProject' : IDL.Func([IDL.Nat, Project], [], []),
   'updateReport' : IDL.Func([DailySiteReport], [], []),
 });
 
@@ -254,30 +223,17 @@ export const idlFactory = ({ IDL }) => {
     'success' : IDL.Opt(IDL.Bool),
     'topped_up_amount' : IDL.Opt(IDL.Nat),
   });
-  const Time = IDL.Int;
-  const ExternalBlob = IDL.Vec(IDL.Nat8);
-  const ProjectPhoto = IDL.Record({
-    'id' : IDL.Nat,
-    'description' : IDL.Text,
-    'dateUploaded' : Time,
-    'imageUrl' : ExternalBlob,
-    'projectId' : IDL.Nat,
-    'reportId' : IDL.Nat,
-  });
-  const UserRole = IDL.Variant({
-    'admin' : IDL.Null,
-    'user' : IDL.Null,
-    'guest' : IDL.Null,
-  });
   const BoqItem = IDL.Record({
     'id' : IDL.Nat,
     'plannedQuantity' : IDL.Float64,
     'unit' : IDL.Text,
+    'description' : IDL.Text,
     'projectId' : IDL.Nat,
     'itemName' : IDL.Text,
     'usedQuantity' : IDL.Float64,
     'unitRate' : IDL.Float64,
   });
+  const Time = IDL.Int;
   const CostEntry = IDL.Record({
     'id' : IDL.Nat,
     'date' : Time,
@@ -303,6 +259,11 @@ export const idlFactory = ({ IDL }) => {
     'quantity' : IDL.Float64,
     'unitCost' : IDL.Float64,
   });
+  const UserRole = IDL.Variant({
+    'admin' : IDL.Null,
+    'user' : IDL.Null,
+    'guest' : IDL.Null,
+  });
   const ProjectStatus = IDL.Variant({
     'active' : IDL.Null,
     'completed' : IDL.Null,
@@ -318,10 +279,12 @@ export const idlFactory = ({ IDL }) => {
   });
   const Project = IDL.Record({
     'id' : IDL.Nat,
+    'estimatedDurationDays' : IDL.Float64,
     'status' : ProjectStatus,
     'endDate' : Time,
     'name' : IDL.Text,
     'description' : IDL.Text,
+    'currentProgressPercentage' : IDL.Float64,
     'stage' : ProjectStage,
     'budget' : IDL.Float64,
     'location' : IDL.Text,
@@ -336,6 +299,17 @@ export const idlFactory = ({ IDL }) => {
     'projectId' : IDL.Nat,
     'notes' : IDL.Text,
     'weather' : IDL.Text,
+  });
+  const ProjectCostSummary = IDL.Record({
+    'status' : ProjectStatus,
+    'remainingBudget' : IDL.Float64,
+    'projectName' : IDL.Text,
+    'totalSpent' : IDL.Float64,
+    'labourCost' : IDL.Float64,
+    'projectId' : IDL.Nat,
+    'materialsCost' : IDL.Float64,
+    'budgetPct' : IDL.Float64,
+    'budget' : IDL.Float64,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
   
@@ -367,41 +341,32 @@ export const idlFactory = ({ IDL }) => {
       ),
     '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-    'addProjectPhoto' : IDL.Func([ProjectPhoto], [IDL.Nat], []),
+    'addBOQItem' : IDL.Func([BoqItem], [IDL.Nat], []),
+    'addCostEntry' : IDL.Func([CostEntry], [IDL.Nat], []),
+    'addLabour' : IDL.Func([Labour], [IDL.Nat], []),
+    'addMaterial' : IDL.Func([Material], [IDL.Nat], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-    'createBoqItem' : IDL.Func([BoqItem], [IDL.Nat], []),
-    'createCostEntry' : IDL.Func([CostEntry], [IDL.Nat], []),
-    'createLabour' : IDL.Func([Labour], [IDL.Nat], []),
-    'createMaterial' : IDL.Func([Material], [IDL.Nat], []),
     'createProject' : IDL.Func([Project], [IDL.Nat], []),
     'createReport' : IDL.Func([DailySiteReport], [IDL.Nat], []),
-    'deleteBoqItem' : IDL.Func([IDL.Nat], [], []),
+    'deleteBOQItem' : IDL.Func([IDL.Nat], [], []),
     'deleteCostEntry' : IDL.Func([IDL.Nat], [], []),
     'deleteLabour' : IDL.Func([IDL.Nat], [], []),
     'deleteMaterial' : IDL.Func([IDL.Nat], [], []),
     'deleteProject' : IDL.Func([IDL.Nat], [], []),
-    'deleteProjectPhoto' : IDL.Func([IDL.Nat], [], []),
     'deleteReport' : IDL.Func([IDL.Nat], [], []),
-    'getAllProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
-    'getBoqItem' : IDL.Func([IDL.Nat], [IDL.Opt(BoqItem)], ['query']),
+    'getAllProjectCostSummaries' : IDL.Func(
+        [],
+        [IDL.Vec(ProjectCostSummary)],
+        ['query'],
+      ),
     'getBoqItemsByProject' : IDL.Func([IDL.Nat], [IDL.Vec(BoqItem)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
-    'getCostControlByProject' : IDL.Func(
+    'getCostEntriesByProject' : IDL.Func(
         [IDL.Nat],
-        [
-          IDL.Record({
-            'remainingBudget' : IDL.Float64,
-            'projectBudget' : IDL.Float64,
-            'totalSpent' : IDL.Float64,
-            'labourCost' : IDL.Float64,
-            'materialsCost' : IDL.Float64,
-          }),
-        ],
+        [IDL.Vec(CostEntry)],
         ['query'],
       ),
-    'getCostEntry' : IDL.Func([IDL.Nat], [IDL.Opt(CostEntry)], ['query']),
-    'getCostsByProject' : IDL.Func([IDL.Nat], [IDL.Vec(CostEntry)], ['query']),
     'getDashboardStats' : IDL.Func(
         [],
         [
@@ -419,45 +384,19 @@ export const idlFactory = ({ IDL }) => {
         ],
         ['query'],
       ),
-    'getLabour' : IDL.Func([IDL.Nat], [IDL.Opt(Labour)], ['query']),
     'getLabourByProject' : IDL.Func([IDL.Nat], [IDL.Vec(Labour)], ['query']),
-    'getMaterial' : IDL.Func([IDL.Nat], [IDL.Opt(Material)], ['query']),
     'getMaterialsByProject' : IDL.Func(
         [IDL.Nat],
         [IDL.Vec(Material)],
         ['query'],
       ),
-    'getPhotosByProject' : IDL.Func(
+    'getProjectById' : IDL.Func([IDL.Nat], [IDL.Opt(Project)], ['query']),
+    'getProjectCostSummary' : IDL.Func(
         [IDL.Nat],
-        [IDL.Vec(ProjectPhoto)],
+        [IDL.Opt(ProjectCostSummary)],
         ['query'],
       ),
-    'getProject' : IDL.Func([IDL.Nat], [IDL.Opt(Project)], ['query']),
-    'getProjectSummary' : IDL.Func(
-        [IDL.Nat],
-        [
-          IDL.Record({
-            'totalMaterialCost' : IDL.Float64,
-            'totalCostEntries' : IDL.Float64,
-            'totalLabourCost' : IDL.Float64,
-            'variance' : IDL.Float64,
-            'totalSpent' : IDL.Float64,
-            'budget' : IDL.Float64,
-          }),
-        ],
-        ['query'],
-      ),
-    'getProjectsByStage' : IDL.Func(
-        [ProjectStage],
-        [IDL.Vec(Project)],
-        ['query'],
-      ),
-    'getProjectsByStatus' : IDL.Func(
-        [ProjectStatus],
-        [IDL.Vec(Project)],
-        ['query'],
-      ),
-    'getReport' : IDL.Func([IDL.Nat], [IDL.Opt(DailySiteReport)], ['query']),
+    'getProjects' : IDL.Func([], [IDL.Vec(Project)], ['query']),
     'getReportsByProject' : IDL.Func(
         [IDL.Nat],
         [IDL.Vec(DailySiteReport)],
@@ -470,12 +409,11 @@ export const idlFactory = ({ IDL }) => {
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
-    'updateBoqItem' : IDL.Func([BoqItem], [], []),
+    'updateBOQItem' : IDL.Func([BoqItem], [], []),
     'updateCostEntry' : IDL.Func([CostEntry], [], []),
     'updateLabour' : IDL.Func([Labour], [], []),
     'updateMaterial' : IDL.Func([Material], [], []),
-    'updateProject' : IDL.Func([Project], [], []),
-    'updateProjectStage' : IDL.Func([IDL.Nat, ProjectStage], [], []),
+    'updateProject' : IDL.Func([IDL.Nat, Project], [], []),
     'updateReport' : IDL.Func([DailySiteReport], [], []),
   });
 };

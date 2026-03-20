@@ -23,9 +23,14 @@ import { Calendar, MapPin, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { type Project, ProjectStage, ProjectStatus } from "../backend";
+import { useAuth } from "../contexts/AuthContext";
 import { useActor } from "../hooks/useActor";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { dateToNs, formatCurrency, formatDate, nowNs } from "../lib/appUtils";
+import {
+  TIMELINE_STATUS_CLASSES,
+  TIMELINE_STATUS_LABELS,
+  getTimelineStatus,
+} from "../lib/timelineUtils";
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   [ProjectStatus.active]: "Active",
@@ -67,6 +72,8 @@ type ProjectForm = {
   budget: string;
   startDate: string;
   endDate: string;
+  estimatedDurationDays: string;
+  currentProgressPercentage: string;
 };
 
 const emptyForm = (): ProjectForm => ({
@@ -78,6 +85,8 @@ const emptyForm = (): ProjectForm => ({
   budget: "",
   startDate: "",
   endDate: "",
+  estimatedDurationDays: "",
+  currentProgressPercentage: "0",
 });
 
 const ALL_STATUSES = [
@@ -97,39 +106,19 @@ const ALL_STAGES = [
 
 export default function Projects() {
   const { actor } = useActor();
-  const { identity, login } = useInternetIdentity();
+  const { canWrite, login } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<ProjectForm>(emptyForm());
 
-  const activeQ = useQuery({
-    queryKey: ["projects", ProjectStatus.active],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.active),
-    enabled: !!actor,
-  });
-  const planningQ = useQuery({
-    queryKey: ["projects", ProjectStatus.planning],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.planning),
-    enabled: !!actor,
-  });
-  const completedQ = useQuery({
-    queryKey: ["projects", ProjectStatus.completed],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.completed),
-    enabled: !!actor,
-  });
-  const onHoldQ = useQuery({
-    queryKey: ["projects", ProjectStatus.onHold],
-    queryFn: () => actor!.getProjectsByStatus(ProjectStatus.onHold),
+  const { data: allProjectsData } = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => actor!.getProjects(),
     enabled: !!actor,
   });
 
-  const allProjects = [
-    ...(activeQ.data ?? []),
-    ...(planningQ.data ?? []),
-    ...(completedQ.data ?? []),
-    ...(onHoldQ.data ?? []),
-  ];
+  const allProjects = allProjectsData ?? [];
 
   const filtered = allProjects.filter(
     (p) =>
@@ -140,9 +129,7 @@ export default function Projects() {
   const createMutation = useMutation({
     mutationFn: (project: Project) => actor!.createProject(project),
     onSuccess: () => {
-      for (const s of ALL_STATUSES) {
-        qc.invalidateQueries({ queryKey: ["projects", s] });
-      }
+      qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       setShowCreate(false);
       setForm(emptyForm());
@@ -163,6 +150,12 @@ export default function Projects() {
       budget: Number.parseFloat(form.budget),
       startDate: form.startDate ? dateToNs(form.startDate) : nowNs(),
       endDate: form.endDate ? dateToNs(form.endDate) : nowNs(),
+      estimatedDurationDays: form.estimatedDurationDays
+        ? Number.parseFloat(form.estimatedDurationDays)
+        : 0,
+      currentProgressPercentage: form.currentProgressPercentage
+        ? Number.parseFloat(form.currentProgressPercentage)
+        : 0,
     });
   }
 
@@ -175,7 +168,7 @@ export default function Projects() {
             {allProjects.length} total projects
           </p>
         </div>
-        {identity ? (
+        {canWrite ? (
           <Button
             data-ocid="projects.new_button"
             onClick={() => setShowCreate(true)}
@@ -183,7 +176,11 @@ export default function Projects() {
             <Plus className="w-4 h-4 mr-2" /> New Project
           </Button>
         ) : (
-          <Button data-ocid="projects.new_button" onClick={login}>
+          <Button
+            data-ocid="projects.new_button"
+            variant="outline"
+            onClick={login}
+          >
             <Plus className="w-4 h-4 mr-2" /> Sign In to Add
           </Button>
         )}
@@ -210,63 +207,82 @@ export default function Projects() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((project, i) => (
-            <Link
-              key={project.id.toString()}
-              to="/projects/$id"
-              params={{ id: project.id.toString() }}
-            >
-              <Card
-                data-ocid={`projects.item.${i + 1}`}
-                className="shadow-card hover:shadow-md transition-shadow cursor-pointer h-full"
+          {filtered.map((project, i) => {
+            const tlStatus = getTimelineStatus(project);
+            return (
+              <Link
+                key={project.id.toString()}
+                to="/projects/$id"
+                params={{ id: project.id.toString() }}
               >
-                <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <h3 className="font-display font-600 text-base leading-tight">
-                      {project.name}
-                    </h3>
-                    <div className="flex flex-col items-end gap-1">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STATUS_COLORS[project.status]}`}
-                      >
-                        {STATUS_LABELS[project.status]}
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STAGE_COLORS[project.stage]}`}
-                      >
-                        {STAGE_LABELS[project.stage]}
+                <Card
+                  data-ocid={`projects.item.${i + 1}`}
+                  className="shadow-card hover:shadow-md transition-shadow cursor-pointer h-full"
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <h3 className="font-display font-600 text-base leading-tight">
+                        {project.name}
+                      </h3>
+                      <div className="flex flex-col items-end gap-1">
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STATUS_COLORS[project.status]}`}
+                        >
+                          {STATUS_LABELS[project.status]}
+                        </span>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STAGE_COLORS[project.stage]}`}
+                        >
+                          {STAGE_LABELS[project.stage]}
+                        </span>
+                        {tlStatus !== "none" && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${TIMELINE_STATUS_CLASSES[tlStatus]}`}
+                          >
+                            {TIMELINE_STATUS_LABELS[tlStatus]}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {project.description && (
+                      <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                        {project.description}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
+                      <MapPin className="w-3 h-3" /> {project.location || "—"}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
+                      <Calendar className="w-3 h-3" />{" "}
+                      {formatDate(project.startDate)} –{" "}
+                      {formatDate(project.endDate)}
+                    </div>
+                    <div className="text-sm font-medium">
+                      {formatCurrency(project.budget)}{" "}
+                      <span className="text-muted-foreground font-normal">
+                        budget
                       </span>
                     </div>
-                  </div>
-                  {project.description && (
-                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                      {project.description}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1">
-                    <MapPin className="w-3 h-3" /> {project.location || "—"}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-3">
-                    <Calendar className="w-3 h-3" />{" "}
-                    {formatDate(project.startDate)} –{" "}
-                    {formatDate(project.endDate)}
-                  </div>
-                  <div className="text-sm font-medium">
-                    {formatCurrency(project.budget)}{" "}
-                    <span className="text-muted-foreground font-normal">
-                      budget
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          ))}
+                    {project.estimatedDurationDays > 0 && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {project.currentProgressPercentage}% progress •{" "}
+                        {project.estimatedDurationDays}d timeline
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </Link>
+            );
+          })}
         </div>
       )}
 
       {/* Create dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent data-ocid="project.dialog" className="max-w-lg">
+        <DialogContent
+          data-ocid="project.dialog"
+          className="max-w-lg max-h-[90vh] overflow-y-auto"
+        >
           <DialogHeader>
             <DialogTitle className="font-display">New Project</DialogTitle>
           </DialogHeader>
@@ -388,6 +404,44 @@ export default function Projects() {
                   onChange={(e) =>
                     setForm((f) => ({ ...f, endDate: e.target.value }))
                   }
+                />
+              </div>
+            </div>
+            {/* Timeline fields */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="proj-duration">Estimated Duration (days)</Label>
+                <Input
+                  id="proj-duration"
+                  data-ocid="project.duration.input"
+                  type="number"
+                  min="0"
+                  value={form.estimatedDurationDays}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      estimatedDurationDays: e.target.value,
+                    }))
+                  }
+                  placeholder="e.g. 180"
+                />
+              </div>
+              <div>
+                <Label htmlFor="proj-progress">Progress (%)</Label>
+                <Input
+                  id="proj-progress"
+                  data-ocid="project.progress.input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.currentProgressPercentage}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      currentProgressPercentage: e.target.value,
+                    }))
+                  }
+                  placeholder="0"
                 />
               </div>
             </div>
