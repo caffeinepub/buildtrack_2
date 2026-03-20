@@ -10,6 +10,15 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface BoqItem {
+  'id' : bigint,
+  'plannedQuantity' : number,
+  'unit' : string,
+  'projectId' : bigint,
+  'itemName' : string,
+  'usedQuantity' : number,
+  'unitRate' : number,
+}
 export interface CostEntry {
   'id' : bigint,
   'date' : Time,
@@ -28,6 +37,15 @@ export interface DailySiteReport {
   'notes' : string,
   'weather' : string,
 }
+export type ExternalBlob = Uint8Array;
+export interface Labour {
+  'id' : bigint,
+  'dailyWage' : number,
+  'role' : string,
+  'projectId' : bigint,
+  'daysWorked' : number,
+  'workerName' : string,
+}
 export interface Material {
   'id' : bigint,
   'supplier' : string,
@@ -43,10 +61,24 @@ export interface Project {
   'endDate' : Time,
   'name' : string,
   'description' : string,
+  'stage' : ProjectStage,
   'budget' : number,
   'location' : string,
   'startDate' : Time,
 }
+export interface ProjectPhoto {
+  'id' : bigint,
+  'description' : string,
+  'dateUploaded' : Time,
+  'imageUrl' : ExternalBlob,
+  'projectId' : bigint,
+  'reportId' : bigint,
+}
+export type ProjectStage = { 'foundation' : null } |
+  { 'structure' : null } |
+  { 'completed' : null } |
+  { 'finishing' : null } |
+  { 'planning' : null };
 export type ProjectStatus = { 'active' : null } |
   { 'completed' : null } |
   { 'onHold' : null } |
@@ -56,54 +88,110 @@ export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface _CaffeineStorageCreateCertificateResult {
+  'method' : string,
+  'blob_hash' : string,
+}
+export interface _CaffeineStorageRefillInformation {
+  'proposed_top_up_amount' : [] | [bigint],
+}
+export interface _CaffeineStorageRefillResult {
+  'success' : [] | [boolean],
+  'topped_up_amount' : [] | [bigint],
+}
 export interface _SERVICE {
+  '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
+  '_caffeineStorageBlobsToDelete' : ActorMethod<[], Array<Uint8Array>>,
+  '_caffeineStorageConfirmBlobDeletion' : ActorMethod<
+    [Array<Uint8Array>],
+    undefined
+  >,
+  '_caffeineStorageCreateCertificate' : ActorMethod<
+    [string],
+    _CaffeineStorageCreateCertificateResult
+  >,
+  '_caffeineStorageRefillCashier' : ActorMethod<
+    [[] | [_CaffeineStorageRefillInformation]],
+    _CaffeineStorageRefillResult
+  >,
+  '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
+  'addProjectPhoto' : ActorMethod<[ProjectPhoto], bigint>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'createBoqItem' : ActorMethod<[BoqItem], bigint>,
   'createCostEntry' : ActorMethod<[CostEntry], bigint>,
+  'createLabour' : ActorMethod<[Labour], bigint>,
   'createMaterial' : ActorMethod<[Material], bigint>,
   'createProject' : ActorMethod<[Project], bigint>,
   'createReport' : ActorMethod<[DailySiteReport], bigint>,
+  'deleteBoqItem' : ActorMethod<[bigint], undefined>,
   'deleteCostEntry' : ActorMethod<[bigint], undefined>,
+  'deleteLabour' : ActorMethod<[bigint], undefined>,
   'deleteMaterial' : ActorMethod<[bigint], undefined>,
   'deleteProject' : ActorMethod<[bigint], undefined>,
+  'deleteProjectPhoto' : ActorMethod<[bigint], undefined>,
   'deleteReport' : ActorMethod<[bigint], undefined>,
+  'getAllProjects' : ActorMethod<[], Array<Project>>,
+  'getBoqItem' : ActorMethod<[bigint], [] | [BoqItem]>,
+  'getBoqItemsByProject' : ActorMethod<[bigint], Array<BoqItem>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getCostControlByProject' : ActorMethod<
+    [bigint],
+    {
+      'remainingBudget' : number,
+      'projectBudget' : number,
+      'totalSpent' : number,
+      'labourCost' : number,
+      'materialsCost' : number,
+    }
+  >,
   'getCostEntry' : ActorMethod<[bigint], [] | [CostEntry]>,
   'getCostsByProject' : ActorMethod<[bigint], Array<CostEntry>>,
   'getDashboardStats' : ActorMethod<
     [],
     {
+      'foundationCount' : bigint,
       'onHoldCount' : bigint,
+      'structureCount' : bigint,
       'completedCount' : bigint,
       'totalSpent' : number,
       'totalBudget' : number,
       'activeCount' : bigint,
       'planningCount' : bigint,
+      'finishingCount' : bigint,
     }
   >,
+  'getLabour' : ActorMethod<[bigint], [] | [Labour]>,
+  'getLabourByProject' : ActorMethod<[bigint], Array<Labour>>,
   'getMaterial' : ActorMethod<[bigint], [] | [Material]>,
   'getMaterialsByProject' : ActorMethod<[bigint], Array<Material>>,
+  'getPhotosByProject' : ActorMethod<[bigint], Array<ProjectPhoto>>,
   'getProject' : ActorMethod<[bigint], [] | [Project]>,
   'getProjectSummary' : ActorMethod<
     [bigint],
     {
       'totalMaterialCost' : number,
       'totalCostEntries' : number,
+      'totalLabourCost' : number,
       'variance' : number,
       'totalSpent' : number,
       'budget' : number,
     }
   >,
+  'getProjectsByStage' : ActorMethod<[ProjectStage], Array<Project>>,
   'getProjectsByStatus' : ActorMethod<[ProjectStatus], Array<Project>>,
   'getReport' : ActorMethod<[bigint], [] | [DailySiteReport]>,
   'getReportsByProject' : ActorMethod<[bigint], Array<DailySiteReport>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'updateBoqItem' : ActorMethod<[BoqItem], undefined>,
   'updateCostEntry' : ActorMethod<[CostEntry], undefined>,
+  'updateLabour' : ActorMethod<[Labour], undefined>,
   'updateMaterial' : ActorMethod<[Material], undefined>,
   'updateProject' : ActorMethod<[Project], undefined>,
+  'updateProjectStage' : ActorMethod<[bigint, ProjectStage], undefined>,
   'updateReport' : ActorMethod<[DailySiteReport], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;

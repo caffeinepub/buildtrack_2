@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   Clock,
   DollarSign,
+  Layers,
   PauseCircle,
   TrendingUp,
 } from "lucide-react";
@@ -28,7 +29,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ProjectStatus } from "../backend";
+import { ProjectStage, ProjectStatus } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { formatCurrency, formatDate } from "../lib/appUtils";
 
@@ -49,6 +50,30 @@ const statusChartConfig = {
   planning: { label: "Planning", color: "oklch(var(--chart-4))" },
   completed: { label: "Completed", color: "oklch(var(--chart-2))" },
   onhold: { label: "On Hold", color: "oklch(var(--chart-5))" },
+};
+
+const STAGE_LABELS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "Planning",
+  [ProjectStage.foundation]: "Foundation",
+  [ProjectStage.structure]: "Structure",
+  [ProjectStage.finishing]: "Finishing",
+  [ProjectStage.completed]: "Completed",
+};
+
+const STAGE_COLORS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "bg-gray-100 text-gray-600 border-gray-200",
+  [ProjectStage.foundation]: "bg-orange-100 text-orange-700 border-orange-200",
+  [ProjectStage.structure]: "bg-blue-100 text-blue-700 border-blue-200",
+  [ProjectStage.finishing]: "bg-purple-100 text-purple-700 border-purple-200",
+  [ProjectStage.completed]: "bg-green-100 text-green-700 border-green-200",
+};
+
+const STAGE_ACCENT_COLORS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "border-l-gray-400",
+  [ProjectStage.foundation]: "border-l-orange-500",
+  [ProjectStage.structure]: "border-l-blue-500",
+  [ProjectStage.finishing]: "border-l-purple-500",
+  [ProjectStage.completed]: "border-l-green-500",
 };
 
 export default function Dashboard() {
@@ -84,6 +109,41 @@ export default function Dashboard() {
     enabled: !!actor,
   });
 
+  // Stage queries
+  const { data: stagePlanning } = useQuery({
+    queryKey: ["projects-stage", ProjectStage.planning],
+    queryFn: () => actor!.getProjectsByStage(ProjectStage.planning),
+    enabled: !!actor,
+  });
+  const { data: stageFoundation } = useQuery({
+    queryKey: ["projects-stage", ProjectStage.foundation],
+    queryFn: () => actor!.getProjectsByStage(ProjectStage.foundation),
+    enabled: !!actor,
+  });
+  const { data: stageStructure } = useQuery({
+    queryKey: ["projects-stage", ProjectStage.structure],
+    queryFn: () => actor!.getProjectsByStage(ProjectStage.structure),
+    enabled: !!actor,
+  });
+  const { data: stageFinishing } = useQuery({
+    queryKey: ["projects-stage", ProjectStage.finishing],
+    queryFn: () => actor!.getProjectsByStage(ProjectStage.finishing),
+    enabled: !!actor,
+  });
+  const { data: stageCompleted } = useQuery({
+    queryKey: ["projects-stage", ProjectStage.completed],
+    queryFn: () => actor!.getProjectsByStage(ProjectStage.completed),
+    enabled: !!actor,
+  });
+
+  const stageCounts: Record<ProjectStage, number> = {
+    [ProjectStage.planning]: stagePlanning?.length ?? 0,
+    [ProjectStage.foundation]: stageFoundation?.length ?? 0,
+    [ProjectStage.structure]: stageStructure?.length ?? 0,
+    [ProjectStage.finishing]: stageFinishing?.length ?? 0,
+    [ProjectStage.completed]: stageCompleted?.length ?? 0,
+  };
+
   const allProjects = [
     ...(activeProjects ?? []),
     ...(planningProjects ?? []),
@@ -109,7 +169,7 @@ export default function Dashboard() {
 
   const budgetChartData = allProjects
     .map((p, i) => ({
-      name: p.name.length > 12 ? `${p.name.slice(0, 12)}…` : p.name,
+      name: p.name.length > 12 ? `${p.name.slice(0, 12)}\u2026` : p.name,
       budget: p.budget,
       spent: summaryResults[i]?.data?.totalSpent ?? 0,
     }))
@@ -143,7 +203,7 @@ export default function Dashboard() {
   const chartsLoading = statsLoading || summariesLoading;
 
   return (
-    <div data-ocid="dashboard.page" className="p-8">
+    <div data-ocid="dashboard.page" className="p-4 md:p-8">
       <div className="mb-8">
         <h1 className="font-display text-3xl font-700 text-foreground">
           Dashboard
@@ -416,6 +476,41 @@ export default function Dashboard() {
         </Card>
       </div>
 
+      {/* Projects by Stage Summary */}
+      <div className="mb-8">
+        <h2 className="font-display text-lg font-600 mb-4 flex items-center gap-2">
+          <Layers className="w-5 h-5 text-primary" /> Projects by Stage
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {(
+            [
+              ProjectStage.planning,
+              ProjectStage.foundation,
+              ProjectStage.structure,
+              ProjectStage.finishing,
+              ProjectStage.completed,
+            ] as ProjectStage[]
+          ).map((stage) => (
+            <Card
+              key={stage}
+              data-ocid={`dashboard.stage.${stage}.card`}
+              className={`shadow-card border-l-4 ${STAGE_ACCENT_COLORS[stage]}`}
+            >
+              <CardContent className="p-4">
+                <div className="text-2xl font-display font-700 mb-1">
+                  {stageCounts[stage]}
+                </div>
+                <span
+                  className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STAGE_COLORS[stage]}`}
+                >
+                  {STAGE_LABELS[stage]}
+                </span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+
       {/* Project Cards */}
       <div>
         <h2 className="font-display text-lg font-600 mb-4">
@@ -483,6 +578,7 @@ function ProjectCard({
     name: string;
     location: string;
     status: ProjectStatus;
+    stage: ProjectStage;
     budget: number;
     startDate: bigint;
     endDate: bigint;
@@ -519,14 +615,24 @@ function ProjectCard({
             <CardTitle className="text-base font-display font-600 leading-tight">
               {project.name}
             </CardTitle>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full border font-medium ${statusColors[project.status] ?? "bg-muted text-muted-foreground"}`}
-            >
-              {project.status === "onHold"
-                ? "On Hold"
-                : project.status.charAt(0).toUpperCase() +
-                  project.status.slice(1)}
-            </span>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
+                  statusColors[project.status] ??
+                  "bg-muted text-muted-foreground"
+                }`}
+              >
+                {project.status === "onHold"
+                  ? "On Hold"
+                  : project.status.charAt(0).toUpperCase() +
+                    project.status.slice(1)}
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full border font-medium ${STAGE_COLORS[project.stage]}`}
+              >
+                {STAGE_LABELS[project.stage]}
+              </span>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">{project.location}</p>
         </CardHeader>

@@ -22,7 +22,7 @@ import { Link } from "@tanstack/react-router";
 import { Calendar, MapPin, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { type Project, ProjectStatus } from "../backend";
+import { type Project, ProjectStage, ProjectStatus } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import { dateToNs, formatCurrency, formatDate, nowNs } from "../lib/appUtils";
@@ -42,11 +42,28 @@ const STATUS_COLORS: Record<ProjectStatus, string> = {
     "bg-destructive/10 text-destructive border-destructive/20",
 };
 
+const STAGE_LABELS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "Planning",
+  [ProjectStage.foundation]: "Foundation",
+  [ProjectStage.structure]: "Structure",
+  [ProjectStage.finishing]: "Finishing",
+  [ProjectStage.completed]: "Completed",
+};
+
+const STAGE_COLORS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "bg-gray-100 text-gray-600 border-gray-200",
+  [ProjectStage.foundation]: "bg-orange-100 text-orange-700 border-orange-200",
+  [ProjectStage.structure]: "bg-blue-100 text-blue-700 border-blue-200",
+  [ProjectStage.finishing]: "bg-purple-100 text-purple-700 border-purple-200",
+  [ProjectStage.completed]: "bg-green-100 text-green-700 border-green-200",
+};
+
 type ProjectForm = {
   name: string;
   description: string;
   location: string;
   status: ProjectStatus;
+  stage: ProjectStage;
   budget: string;
   startDate: string;
   endDate: string;
@@ -57,6 +74,7 @@ const emptyForm = (): ProjectForm => ({
   description: "",
   location: "",
   status: ProjectStatus.planning,
+  stage: ProjectStage.planning,
   budget: "",
   startDate: "",
   endDate: "",
@@ -69,6 +87,14 @@ const ALL_STATUSES = [
   ProjectStatus.onHold,
 ];
 
+const ALL_STAGES = [
+  ProjectStage.planning,
+  ProjectStage.foundation,
+  ProjectStage.structure,
+  ProjectStage.finishing,
+  ProjectStage.completed,
+];
+
 export default function Projects() {
   const { actor } = useActor();
   const { identity, login } = useInternetIdentity();
@@ -77,7 +103,6 @@ export default function Projects() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState<ProjectForm>(emptyForm());
 
-  // Fixed hook calls at top level (not in a loop)
   const activeQ = useQuery({
     queryKey: ["projects", ProjectStatus.active],
     queryFn: () => actor!.getProjectsByStatus(ProjectStatus.active),
@@ -134,6 +159,7 @@ export default function Projects() {
       description: form.description,
       location: form.location,
       status: form.status,
+      stage: form.stage,
       budget: Number.parseFloat(form.budget),
       startDate: form.startDate ? dateToNs(form.startDate) : nowNs(),
       endDate: form.endDate ? dateToNs(form.endDate) : nowNs(),
@@ -141,8 +167,8 @@ export default function Projects() {
   }
 
   return (
-    <div data-ocid="projects.page" className="p-8">
-      <div className="flex items-center justify-between mb-8">
+    <div data-ocid="projects.page" className="p-4 md:p-8">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="font-display text-3xl font-700">Projects</h1>
           <p className="text-muted-foreground mt-1">
@@ -199,11 +225,18 @@ export default function Projects() {
                     <h3 className="font-display font-600 text-base leading-tight">
                       {project.name}
                     </h3>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STATUS_COLORS[project.status]}`}
-                    >
-                      {STATUS_LABELS[project.status]}
-                    </span>
+                    <div className="flex flex-col items-end gap-1">
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STATUS_COLORS[project.status]}`}
+                      >
+                        {STATUS_LABELS[project.status]}
+                      </span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${STAGE_COLORS[project.stage]}`}
+                      >
+                        {STAGE_LABELS[project.stage]}
+                      </span>
+                    </div>
                   </div>
                   {project.description && (
                     <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
@@ -290,25 +323,47 @@ export default function Projects() {
                 />
               </div>
             </div>
-            <div>
-              <Label>Status</Label>
-              <Select
-                value={form.status}
-                onValueChange={(v) =>
-                  setForm((f) => ({ ...f, status: v as ProjectStatus }))
-                }
-              >
-                <SelectTrigger data-ocid="project.status.select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_STATUSES.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {STATUS_LABELS[s]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={form.status}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, status: v as ProjectStatus }))
+                  }
+                >
+                  <SelectTrigger data-ocid="project.status.select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_STATUSES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Construction Stage</Label>
+                <Select
+                  value={form.stage}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, stage: v as ProjectStage }))
+                  }
+                >
+                  <SelectTrigger data-ocid="project.stage.select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_STAGES.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {STAGE_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>

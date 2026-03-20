@@ -1,3 +1,4 @@
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -33,22 +34,44 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Calendar,
+  Camera,
   Clock,
   Cloud,
   DollarSign,
+  Image,
   MapPin,
+  Maximize2,
   Pencil,
   Plus,
   Trash2,
+  Upload,
   Users,
 } from "lucide-react";
 import { useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { toast } from "sonner";
 import {
+  type BoqItem,
   type CostEntry,
   type DailySiteReport,
+  ExternalBlob,
+  type Labour,
   type Material,
   type Project,
+  type ProjectPhoto,
+  ProjectStage,
   ProjectStatus,
 } from "../backend";
 import { useActor } from "../hooks/useActor";
@@ -60,6 +83,38 @@ import {
   nowNs,
   nsToDateInput,
 } from "../lib/appUtils";
+
+const STAGE_LABELS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "Planning",
+  [ProjectStage.foundation]: "Foundation",
+  [ProjectStage.structure]: "Structure",
+  [ProjectStage.finishing]: "Finishing",
+  [ProjectStage.completed]: "Completed",
+};
+
+const STAGE_COLORS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "bg-gray-100 text-gray-600 border-gray-200",
+  [ProjectStage.foundation]: "bg-orange-100 text-orange-700 border-orange-200",
+  [ProjectStage.structure]: "bg-blue-100 text-blue-700 border-blue-200",
+  [ProjectStage.finishing]: "bg-purple-100 text-purple-700 border-purple-200",
+  [ProjectStage.completed]: "bg-green-100 text-green-700 border-green-200",
+};
+
+const STAGE_PROGRESS: Record<ProjectStage, number> = {
+  [ProjectStage.planning]: 0,
+  [ProjectStage.foundation]: 25,
+  [ProjectStage.structure]: 50,
+  [ProjectStage.finishing]: 75,
+  [ProjectStage.completed]: 100,
+};
+
+const STAGE_PROGRESS_COLORS: Record<ProjectStage, string> = {
+  [ProjectStage.planning]: "bg-gray-400",
+  [ProjectStage.foundation]: "bg-orange-500",
+  [ProjectStage.structure]: "bg-blue-500",
+  [ProjectStage.finishing]: "bg-purple-500",
+  [ProjectStage.completed]: "bg-green-500",
+};
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   [ProjectStatus.active]: "Active",
@@ -118,7 +173,7 @@ export default function ProjectDetail() {
 
   if (isLoading) {
     return (
-      <div className="p-8">
+      <div className="p-4 md:p-8">
         <Skeleton className="h-64 w-full" />
       </div>
     );
@@ -133,7 +188,7 @@ export default function ProjectDetail() {
       : 0;
 
   return (
-    <div data-ocid="project.detail.page" className="p-8">
+    <div data-ocid="project.detail.page" className="p-4 md:p-8">
       <button
         type="button"
         onClick={() => window.history.back()}
@@ -142,10 +197,10 @@ export default function ProjectDetail() {
         <ArrowLeft className="w-4 h-4" /> Back
       </button>
 
-      <div className="flex items-start justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between mb-6 gap-4">
         <div>
           <h1 className="font-display text-3xl font-700">{project.name}</h1>
-          <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-2 mt-2 text-sm text-muted-foreground">
             <span className="flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5" /> {project.location || "—"}
             </span>
@@ -176,6 +231,9 @@ export default function ProjectDetail() {
         )}
       </div>
 
+      {/* Construction Stage */}
+      <StagePanel project={project} projectId={projectId} id={id} />
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Card className="shadow-card">
@@ -200,7 +258,9 @@ export default function ProjectDetail() {
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Remaining</p>
             <p
-              className={`font-display font-700 text-xl mt-1 ${(summary?.variance ?? 0) < 0 ? "text-destructive" : ""}`}
+              className={`font-display font-700 text-xl mt-1 ${
+                (summary?.variance ?? 0) < 0 ? "text-destructive" : ""
+              }`}
             >
               {formatCurrency(summary ? summary.variance : project.budget)}
             </p>
@@ -218,20 +278,37 @@ export default function ProjectDetail() {
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList className="mb-6">
-          <TabsTrigger value="overview" data-ocid="project.overview.tab">
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="reports" data-ocid="project.reports.tab">
-            Daily Reports
-          </TabsTrigger>
-          <TabsTrigger value="materials" data-ocid="project.materials.tab">
-            Materials
-          </TabsTrigger>
-          <TabsTrigger value="budget" data-ocid="project.budget.tab">
-            Budget
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 mb-6">
+          <TabsList className="whitespace-nowrap">
+            <TabsTrigger value="overview" data-ocid="project.overview.tab">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="reports" data-ocid="project.reports.tab">
+              Daily Reports
+            </TabsTrigger>
+            <TabsTrigger value="materials" data-ocid="project.materials.tab">
+              Materials
+            </TabsTrigger>
+            <TabsTrigger value="labour" data-ocid="project.labour.tab">
+              Labour
+            </TabsTrigger>
+            <TabsTrigger value="boq" data-ocid="project.boq.tab">
+              BOQ
+            </TabsTrigger>
+            <TabsTrigger
+              value="cost-control"
+              data-ocid="project.cost_control.tab"
+            >
+              Cost Control
+            </TabsTrigger>
+            <TabsTrigger value="budget" data-ocid="project.budget.tab">
+              Budget
+            </TabsTrigger>
+            <TabsTrigger value="photos" data-ocid="project.photos.tab">
+              Photo Progress
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview">
           <Card className="shadow-card">
@@ -275,6 +352,18 @@ export default function ProjectDetail() {
           <MaterialsTab projectId={projectId} materials={materials ?? []} />
         </TabsContent>
 
+        <TabsContent value="labour">
+          <LabourTab projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="boq">
+          <BOQTab projectId={projectId} materials={materials ?? []} />
+        </TabsContent>
+
+        <TabsContent value="cost-control">
+          <CostControlTab projectId={projectId} project={project} />
+        </TabsContent>
+
         <TabsContent value="budget">
           <BudgetTab
             projectId={projectId}
@@ -282,6 +371,9 @@ export default function ProjectDetail() {
             project={project}
             summary={summary}
           />
+        </TabsContent>
+        <TabsContent value="photos">
+          <PhotoProgressTab projectId={BigInt(projectId)} />
         </TabsContent>
       </Tabs>
     </div>
@@ -302,6 +394,7 @@ function EditProjectDialog({
     description: project.description,
     location: project.location,
     status: project.status,
+    stage: project.stage,
     budget: project.budget.toString(),
     startDate: nsToDateInput(project.startDate),
     endDate: nsToDateInput(project.endDate),
@@ -315,6 +408,7 @@ function EditProjectDialog({
         description: form.description,
         location: form.location,
         status: form.status,
+        stage: form.stage,
         budget: Number.parseFloat(form.budget),
         startDate: dateToNs(form.startDate),
         endDate: dateToNs(form.endDate),
@@ -333,12 +427,19 @@ function EditProjectDialog({
     ProjectStatus.completed,
     ProjectStatus.onHold,
   ];
-  const STATUS_LABELS: Record<ProjectStatus, string> = {
+  const STATUS_LABELS_LOCAL: Record<ProjectStatus, string> = {
     [ProjectStatus.active]: "Active",
     [ProjectStatus.planning]: "Planning",
     [ProjectStatus.completed]: "Completed",
     [ProjectStatus.onHold]: "On Hold",
   };
+  const ALL_EDIT_STAGES = [
+    ProjectStage.planning,
+    ProjectStage.foundation,
+    ProjectStage.structure,
+    ProjectStage.finishing,
+    ProjectStage.completed,
+  ];
 
   return (
     <>
@@ -414,7 +515,27 @@ function EditProjectDialog({
                 <SelectContent>
                   {statuses.map((s) => (
                     <SelectItem key={s} value={s}>
-                      {STATUS_LABELS[s]}
+                      {STATUS_LABELS_LOCAL[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Construction Stage</Label>
+              <Select
+                value={form.stage}
+                onValueChange={(v) =>
+                  setForm((f) => ({ ...f, stage: v as ProjectStage }))
+                }
+              >
+                <SelectTrigger data-ocid="project.edit.stage.select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_EDIT_STAGES.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STAGE_LABELS[s]}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -458,12 +579,119 @@ function EditProjectDialog({
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending}
             >
-              {mutation.isPending ? "Saving..." : "Save"}
+              {mutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// ── Stage Panel ──────────────────────────────────────────────────────────────
+
+function StagePanel({
+  project,
+  projectId,
+  id,
+}: { project: Project; projectId: bigint; id: string | undefined }) {
+  const { actor } = useActor();
+  const { identity } = useInternetIdentity();
+  const qc = useQueryClient();
+  const [selectedStage, setSelectedStage] = useState<ProjectStage>(
+    project.stage,
+  );
+
+  const stageMutation = useMutation({
+    mutationFn: (stage: ProjectStage) =>
+      actor!.updateProjectStage(projectId, stage),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["projects-stage"] });
+      toast.success("Stage updated");
+    },
+    onError: () => toast.error("Failed to update stage"),
+  });
+
+  const ALL_STAGES_PANEL = [
+    ProjectStage.planning,
+    ProjectStage.foundation,
+    ProjectStage.structure,
+    ProjectStage.finishing,
+    ProjectStage.completed,
+  ];
+
+  const progressPct = STAGE_PROGRESS[project.stage];
+  const progressColor = STAGE_PROGRESS_COLORS[project.stage];
+
+  return (
+    <Card className="shadow-card mb-6">
+      <CardContent className="p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wide">
+              Construction Stage
+            </p>
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <span
+                className={`text-sm px-3 py-1 rounded-full border font-medium ${STAGE_COLORS[project.stage]}`}
+              >
+                {STAGE_LABELS[project.stage]}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {progressPct}% complete
+              </span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
+              <div
+                className={`h-2.5 rounded-full transition-all duration-500 ${progressColor}`}
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+              <span>Planning</span>
+              <span>Foundation</span>
+              <span>Structure</span>
+              <span>Finishing</span>
+              <span>Completed</span>
+            </div>
+          </div>
+          {identity && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:w-64">
+              <Select
+                value={selectedStage}
+                onValueChange={(v) => setSelectedStage(v as ProjectStage)}
+              >
+                <SelectTrigger
+                  data-ocid="project.stage.select"
+                  className="flex-1"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_STAGES_PANEL.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {STAGE_LABELS[s]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                data-ocid="project.stage.save_button"
+                size="sm"
+                disabled={
+                  selectedStage === project.stage || stageMutation.isPending
+                }
+                onClick={() => stageMutation.mutate(selectedStage)}
+              >
+                {stageMutation.isPending ? "Saving..." : "Save Stage"}
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -882,66 +1110,69 @@ function MaterialsTab({
         </Card>
       ) : (
         <Card className="shadow-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Unit Cost</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead>Supplier</TableHead>
-                {identity && <TableHead />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {materials.map((m, i) => (
-                <TableRow
-                  key={m.id.toString()}
-                  data-ocid={`project.material.item.${i + 1}`}
-                >
-                  <TableCell className="font-medium">{m.name}</TableCell>
-                  <TableCell>{m.unit}</TableCell>
-                  <TableCell className="text-right">{m.quantity}</TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(m.unitCost)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(m.quantity * m.unitCost)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {m.supplier || "—"}
-                  </TableCell>
-                  {identity && (
-                    <TableCell>
-                      <div className="flex gap-1 justify-end">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          data-ocid={`project.material.edit_button.${i + 1}`}
-                          onClick={() => openEdit(m)}
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
-                          data-ocid={`project.material.delete_button.${i + 1}`}
-                          onClick={() => {
-                            if (confirm("Delete?")) deleteMutation.mutate(m.id);
-                          }}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  )}
+          <div className="overflow-x-auto w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Qty</TableHead>
+                  <TableHead className="text-right">Unit Cost</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>Supplier</TableHead>
+                  {identity && <TableHead />}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {materials.map((m, i) => (
+                  <TableRow
+                    key={m.id.toString()}
+                    data-ocid={`project.material.item.${i + 1}`}
+                  >
+                    <TableCell className="font-medium">{m.name}</TableCell>
+                    <TableCell>{m.unit}</TableCell>
+                    <TableCell className="text-right">{m.quantity}</TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(m.unitCost)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(m.quantity * m.unitCost)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {m.supplier || "—"}
+                    </TableCell>
+                    {identity && (
+                      <TableCell>
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            data-ocid={`project.material.edit_button.${i + 1}`}
+                            onClick={() => openEdit(m)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            data-ocid={`project.material.delete_button.${i + 1}`}
+                            onClick={() => {
+                              if (confirm("Delete?"))
+                                deleteMutation.mutate(m.id);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </Card>
       )}
 
@@ -1044,6 +1275,839 @@ function MaterialsTab({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ── Labour Tab ────────────────────────────────────────────────────────────────
+
+function LabourTab({ projectId }: { projectId: bigint }) {
+  const { actor } = useActor();
+  const { identity } = useInternetIdentity();
+  const qc = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editLabour, setEditLabour] = useState<Labour | null>(null);
+  const [form, setForm] = useState({
+    workerName: "",
+    role: "",
+    dailyWage: "",
+    daysWorked: "",
+  });
+
+  const { data: labourList = [] } = useQuery({
+    queryKey: ["labour", projectId.toString()],
+    queryFn: () => actor!.getLabourByProject(projectId),
+    enabled: !!actor,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (l: Labour) => actor!.createLabour(l),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["labour", projectId.toString()] });
+      qc.invalidateQueries({
+        queryKey: ["cost-control", projectId.toString()],
+      });
+      setShowAdd(false);
+      resetForm();
+      toast.success("Labour record added");
+    },
+    onError: () => toast.error("Failed to add labour record"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (l: Labour) => actor!.updateLabour(l),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["labour", projectId.toString()] });
+      qc.invalidateQueries({
+        queryKey: ["cost-control", projectId.toString()],
+      });
+      setEditLabour(null);
+      toast.success("Labour record updated");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: bigint) => actor!.deleteLabour(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["labour", projectId.toString()] });
+      qc.invalidateQueries({
+        queryKey: ["cost-control", projectId.toString()],
+      });
+      toast.success("Labour record deleted");
+    },
+  });
+
+  function resetForm() {
+    setForm({ workerName: "", role: "", dailyWage: "", daysWorked: "" });
+  }
+
+  function openEdit(l: Labour) {
+    setForm({
+      workerName: l.workerName,
+      role: l.role,
+      dailyWage: l.dailyWage.toString(),
+      daysWorked: l.daysWorked.toString(),
+    });
+    setEditLabour(l);
+  }
+
+  function handleSubmit() {
+    const payload: Labour = {
+      id: editLabour ? editLabour.id : 0n,
+      projectId,
+      workerName: form.workerName,
+      role: form.role,
+      dailyWage: Number.parseFloat(form.dailyWage || "0"),
+      daysWorked: Number.parseFloat(form.daysWorked || "0"),
+    };
+    if (editLabour) updateMutation.mutate(payload);
+    else createMutation.mutate(payload);
+  }
+
+  const totalLabourCost = labourList.reduce(
+    (sum, l) => sum + l.dailyWage * l.daysWorked,
+    0,
+  );
+  const isOpen = showAdd || !!editLabour;
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="font-display font-600 text-lg">
+          Labour ({labourList.length}) &mdash; Total:{" "}
+          {formatCurrency(totalLabourCost)}
+        </h2>
+        {identity && (
+          <Button
+            size="sm"
+            data-ocid="project.add_labour_button"
+            onClick={() => {
+              resetForm();
+              setShowAdd(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1" /> Add Labour
+          </Button>
+        )}
+      </div>
+
+      {labourList.length === 0 ? (
+        <Card data-ocid="project.labour.empty_state">
+          <CardContent className="py-10 text-center text-muted-foreground">
+            No labour records yet.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="shadow-card">
+          <div className="overflow-x-auto w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Worker Name</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead className="text-right">Daily Wage (Tsh)</TableHead>
+                  <TableHead className="text-right">Days Worked</TableHead>
+                  <TableHead className="text-right">Total (Tsh)</TableHead>
+                  {identity && <TableHead />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {labourList.map((l, i) => (
+                  <TableRow
+                    key={l.id.toString()}
+                    data-ocid={`project.labour.item.${i + 1}`}
+                  >
+                    <TableCell className="font-medium">
+                      {l.workerName}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {l.role}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {formatCurrency(l.dailyWage)}
+                    </TableCell>
+                    <TableCell className="text-right">{l.daysWorked}</TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(l.dailyWage * l.daysWorked)}
+                    </TableCell>
+                    {identity && (
+                      <TableCell>
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            data-ocid={`project.labour.edit_button.${i + 1}`}
+                            onClick={() => openEdit(l)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-destructive hover:text-destructive"
+                            data-ocid={`project.labour.delete_button.${i + 1}`}
+                            onClick={() => {
+                              if (confirm("Delete?"))
+                                deleteMutation.mutate(l.id);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
+
+      <Dialog
+        open={isOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setShowAdd(false);
+            setEditLabour(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {editLabour ? "Edit Labour Record" : "Add Labour Record"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Worker Name</Label>
+                <Input
+                  data-ocid="labour.name.input"
+                  value={form.workerName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, workerName: e.target.value }))
+                  }
+                  placeholder="e.g. John Doe"
+                />
+              </div>
+              <div>
+                <Label>Role</Label>
+                <Input
+                  data-ocid="labour.role.input"
+                  value={form.role}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, role: e.target.value }))
+                  }
+                  placeholder="Mason, Carpenter..."
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Daily Wage (Tsh)</Label>
+                <Input
+                  data-ocid="labour.wage.input"
+                  type="number"
+                  value={form.dailyWage}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, dailyWage: e.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Days Worked</Label>
+                <Input
+                  data-ocid="labour.days.input"
+                  type="number"
+                  value={form.daysWorked}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, daysWorked: e.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-ocid="labour.cancel_button"
+              onClick={() => {
+                setShowAdd(false);
+                setEditLabour(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-ocid="labour.submit_button"
+              onClick={handleSubmit}
+              disabled={isPending}
+            >
+              {isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── BOQ Tab ───────────────────────────────────────────────────────────────────
+
+function getBoqStatus(
+  usedQty: number,
+  plannedQty: number,
+): "ok" | "warning" | "exceeded" {
+  if (plannedQty <= 0) return "ok";
+  if (usedQty > plannedQty) return "exceeded";
+  if (usedQty > plannedQty * 0.8) return "warning";
+  return "ok";
+}
+
+function BOQTab({
+  projectId,
+  materials,
+}: { projectId: bigint; materials: Material[] }) {
+  const { actor } = useActor();
+  const { identity } = useInternetIdentity();
+  const qc = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editItem, setEditItem] = useState<BoqItem | null>(null);
+  const [form, setForm] = useState({
+    itemName: "",
+    unit: "",
+    plannedQuantity: "",
+    unitRate: "",
+    usedQuantity: "0",
+  });
+
+  const { data: boqItems = [] } = useQuery({
+    queryKey: ["boq", projectId.toString()],
+    queryFn: () => actor!.getBoqItemsByProject(projectId),
+    enabled: !!actor,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (item: BoqItem) => actor!.createBoqItem(item),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
+      setShowAdd(false);
+      resetForm();
+      toast.success("BOQ item added");
+    },
+    onError: () => toast.error("Failed to add BOQ item"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (item: BoqItem) => actor!.updateBoqItem(item),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
+      setEditItem(null);
+      toast.success("BOQ item updated");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: bigint) => actor!.deleteBoqItem(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["boq", projectId.toString()] });
+      toast.success("BOQ item deleted");
+    },
+  });
+
+  function resetForm() {
+    setForm({
+      itemName: "",
+      unit: "",
+      plannedQuantity: "",
+      unitRate: "",
+      usedQuantity: "0",
+    });
+  }
+
+  function openEdit(item: BoqItem) {
+    setForm({
+      itemName: item.itemName,
+      unit: item.unit,
+      plannedQuantity: item.plannedQuantity.toString(),
+      unitRate: item.unitRate.toString(),
+      usedQuantity: item.usedQuantity.toString(),
+    });
+    setEditItem(item);
+  }
+
+  function handleSubmit() {
+    const payload: BoqItem = {
+      id: editItem ? editItem.id : 0n,
+      projectId,
+      itemName: form.itemName,
+      unit: form.unit,
+      plannedQuantity: Number.parseFloat(form.plannedQuantity || "0"),
+      unitRate: Number.parseFloat(form.unitRate || "0"),
+      usedQuantity: Number.parseFloat(form.usedQuantity || "0"),
+    };
+    if (editItem) updateMutation.mutate(payload);
+    else createMutation.mutate(payload);
+  }
+
+  // Compute usedQuantity from materials (auto-sync by matching item name)
+  function computeUsedQty(itemName: string): number {
+    const lower = itemName.toLowerCase();
+    const matched = materials.filter((m) => m.name.toLowerCase() === lower);
+    if (matched.length > 0) {
+      return matched.reduce((sum, m) => sum + m.quantity, 0);
+    }
+    return -1; // -1 means no materials match, use stored value
+  }
+
+  const isOpen = showAdd || !!editItem;
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="font-display font-600 text-lg">
+          Bill of Quantities ({boqItems.length})
+        </h2>
+        {identity && (
+          <Button
+            size="sm"
+            data-ocid="project.add_boq_button"
+            onClick={() => {
+              resetForm();
+              setShowAdd(true);
+            }}
+          >
+            <Plus className="w-4 h-4 mr-1" /> Add BOQ Item
+          </Button>
+        )}
+      </div>
+
+      {boqItems.length === 0 ? (
+        <Card data-ocid="project.boq.empty_state">
+          <CardContent className="py-10 text-center text-muted-foreground">
+            No BOQ items yet. Add items to track planned vs actual quantities.
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="shadow-card">
+          <div className="overflow-x-auto w-full">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item Name</TableHead>
+                  <TableHead>Unit</TableHead>
+                  <TableHead className="text-right">Planned Qty</TableHead>
+                  <TableHead className="text-right">Unit Rate (Tsh)</TableHead>
+                  <TableHead className="text-right">Planned Cost</TableHead>
+                  <TableHead className="text-right">Used Qty</TableHead>
+                  <TableHead className="text-right">Remaining Qty</TableHead>
+                  <TableHead>Status</TableHead>
+                  {identity && <TableHead />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {boqItems.map((item, i) => {
+                  const materialUsed = computeUsedQty(item.itemName);
+                  const usedQty =
+                    materialUsed >= 0 ? materialUsed : item.usedQuantity;
+                  const plannedCost = item.plannedQuantity * item.unitRate;
+                  const remainingQty = item.plannedQuantity - usedQty;
+                  const status = getBoqStatus(usedQty, item.plannedQuantity);
+
+                  return (
+                    <TableRow
+                      key={item.id.toString()}
+                      data-ocid={`project.boq.item.${i + 1}`}
+                      className={
+                        status === "exceeded"
+                          ? "bg-red-50 hover:bg-red-100"
+                          : ""
+                      }
+                    >
+                      <TableCell className="font-medium">
+                        {item.itemName}
+                      </TableCell>
+                      <TableCell>{item.unit}</TableCell>
+                      <TableCell className="text-right">
+                        {item.plannedQuantity}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(item.unitRate)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(plannedCost)}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right font-medium ${
+                          status === "exceeded"
+                            ? "text-red-600"
+                            : status === "warning"
+                              ? "text-yellow-600"
+                              : ""
+                        }`}
+                      >
+                        {usedQty}
+                        {materialUsed >= 0 && (
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            (auto)
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right ${
+                          remainingQty < 0 ? "text-destructive" : ""
+                        }`}
+                      >
+                        {remainingQty.toFixed(2)}
+                      </TableCell>
+                      <TableCell>
+                        {status === "ok" && (
+                          <Badge className="bg-green-100 text-green-700 border-green-200 hover:bg-green-100">
+                            OK
+                          </Badge>
+                        )}
+                        {status === "warning" && (
+                          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 hover:bg-yellow-100">
+                            Warning
+                          </Badge>
+                        )}
+                        {status === "exceeded" && (
+                          <Badge className="bg-red-100 text-red-700 border-red-200 hover:bg-red-100">
+                            Exceeded
+                          </Badge>
+                        )}
+                      </TableCell>
+                      {identity && (
+                        <TableCell>
+                          <div className="flex gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              data-ocid={`project.boq.edit_button.${i + 1}`}
+                              onClick={() => openEdit(item)}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              data-ocid={`project.boq.delete_button.${i + 1}`}
+                              onClick={() => {
+                                if (confirm("Delete this BOQ item?"))
+                                  deleteMutation.mutate(item.id);
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
+
+      <Dialog
+        open={isOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setShowAdd(false);
+            setEditItem(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display">
+              {editItem ? "Edit BOQ Item" : "Add BOQ Item"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Item Name</Label>
+                <Input
+                  data-ocid="boq.name.input"
+                  value={form.itemName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, itemName: e.target.value }))
+                  }
+                  placeholder="e.g. Cement"
+                />
+              </div>
+              <div>
+                <Label>Unit</Label>
+                <Input
+                  data-ocid="boq.unit.input"
+                  value={form.unit}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, unit: e.target.value }))
+                  }
+                  placeholder="bags, m³, kg..."
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Planned Quantity</Label>
+                <Input
+                  data-ocid="boq.planned_qty.input"
+                  type="number"
+                  value={form.plannedQuantity}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, plannedQuantity: e.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label>Unit Rate (Tsh)</Label>
+                <Input
+                  data-ocid="boq.unit_rate.input"
+                  type="number"
+                  value={form.unitRate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, unitRate: e.target.value }))
+                  }
+                  placeholder="0"
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Used Quantity (manual override)</Label>
+              <Input
+                data-ocid="boq.used_qty.input"
+                type="number"
+                value={form.usedQuantity}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, usedQuantity: e.target.value }))
+                }
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Auto-populated from Materials if item name matches.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-ocid="boq.cancel_button"
+              onClick={() => {
+                setShowAdd(false);
+                setEditItem(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-ocid="boq.submit_button"
+              onClick={handleSubmit}
+              disabled={isPending}
+            >
+              {isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Cost Control Tab ──────────────────────────────────────────────────────────
+
+function CostControlTab({
+  projectId,
+  project,
+}: { projectId: bigint; project: Project }) {
+  const { actor } = useActor();
+
+  const { data: costControl, isLoading } = useQuery({
+    queryKey: ["cost-control", projectId.toString()],
+    queryFn: () => actor!.getCostControlByProject(projectId),
+    enabled: !!actor,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4" data-ocid="project.cost_control.loading_state">
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  const budget = costControl?.projectBudget ?? project.budget;
+  const materialsCost = costControl?.materialsCost ?? 0;
+  const labourCost = costControl?.labourCost ?? 0;
+  const totalSpent = costControl?.totalSpent ?? 0;
+  const remainingBudget = costControl?.remainingBudget ?? budget;
+  const spentPct = budget > 0 ? Math.min((totalSpent / budget) * 100, 100) : 0;
+
+  const barData = [
+    {
+      name: "Budget vs Spent",
+      Budget: budget,
+      Spent: totalSpent,
+    },
+  ];
+
+  const pieData = [
+    { name: "Materials", value: materialsCost, fill: "#1e40af" },
+    { name: "Labour", value: labourCost, fill: "#d4a843" },
+    { name: "Remaining", value: Math.max(0, remainingBudget), fill: "#e5e7eb" },
+  ].filter((d) => d.value > 0);
+
+  return (
+    <div className="space-y-6" data-ocid="project.cost_control.panel">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Project Budget</p>
+            <p className="font-display font-700 text-xl mt-1">
+              {formatCurrency(budget)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Materials Cost</p>
+            <p className="font-display font-700 text-xl mt-1 text-chart-2">
+              {formatCurrency(materialsCost)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Labour Cost</p>
+            <p
+              className="font-display font-700 text-xl mt-1"
+              style={{ color: "#d4a843" }}
+            >
+              {formatCurrency(labourCost)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-card">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Total Spent</p>
+            <p
+              className={`font-display font-700 text-xl mt-1 ${
+                totalSpent > budget ? "text-destructive" : ""
+              }`}
+            >
+              {formatCurrency(totalSpent)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-card col-span-2 md:col-span-2">
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Remaining Budget</p>
+            <p
+              className={`font-display font-700 text-xl mt-1 ${
+                remainingBudget < 0 ? "text-destructive" : "text-green-600"
+              }`}
+            >
+              {formatCurrency(remainingBudget)}
+            </p>
+            <div className="mt-2">
+              <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                <span>Budget utilization</span>
+                <span>{spentPct.toFixed(1)}%</span>
+              </div>
+              <Progress value={spentPct} className="h-2" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Bar chart: Budget vs Spent */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-display text-sm">
+              Budget vs Total Spent
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={barData} barCategoryGap="40%">
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis
+                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`}
+                  tick={{ fontSize: 10 }}
+                />
+                <Tooltip
+                  formatter={(value: number, name: string) => [
+                    formatCurrency(value),
+                    name,
+                  ]}
+                />
+                <Legend />
+                <Bar dataKey="Budget" fill="#1e40af" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Spent" fill="#d4a843" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Pie chart: Cost breakdown */}
+        <Card className="shadow-card">
+          <CardHeader>
+            <CardTitle className="font-display text-sm">
+              Cost Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    dataKey="value"
+                    label={({ name, percent }) =>
+                      `${name} ${(percent * 100).toFixed(0)}%`
+                    }
+                    labelLine={false}
+                  >
+                    {pieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value: number) => formatCurrency(value)}
+                  />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">
+                No cost data yet
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -1172,7 +2236,11 @@ function BudgetTab({
             <div>
               <p className="text-xs text-muted-foreground mb-1">Variance</p>
               <p
-                className={`font-display font-700 text-lg ${(summary?.variance ?? 0) < 0 ? "text-destructive" : "text-chart-2"}`}
+                className={`font-display font-700 text-lg ${
+                  (summary?.variance ?? 0) < 0
+                    ? "text-destructive"
+                    : "text-chart-2"
+                }`}
               >
                 {(summary?.variance ?? 0) >= 0 ? "+" : ""}
                 {formatCurrency(summary?.variance ?? project.budget)}
@@ -1231,67 +2299,69 @@ function BudgetTab({
           </Card>
         ) : (
           <Card className="shadow-card">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  {identity && <TableHead />}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sorted.map((c, i) => (
-                  <TableRow
-                    key={c.id.toString()}
-                    data-ocid={`project.cost.item.${i + 1}`}
-                  >
-                    <TableCell className="text-sm">
-                      {formatDate(c.date)}
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground">
-                        {c.category}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {c.description}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(c.amount)}
-                    </TableCell>
-                    {identity && (
-                      <TableCell>
-                        <div className="flex gap-1 justify-end">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            data-ocid={`project.cost.edit_button.${i + 1}`}
-                            onClick={() => openEdit(c)}
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
-                            data-ocid={`project.cost.delete_button.${i + 1}`}
-                            onClick={() => {
-                              if (confirm("Delete?"))
-                                deleteMutation.mutate(c.id);
-                            }}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    )}
+            <div className="overflow-x-auto w-full">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    {identity && <TableHead />}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {sorted.map((c, i) => (
+                    <TableRow
+                      key={c.id.toString()}
+                      data-ocid={`project.cost.item.${i + 1}`}
+                    >
+                      <TableCell className="text-sm">
+                        {formatDate(c.date)}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-accent text-accent-foreground">
+                          {c.category}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {c.description}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(c.amount)}
+                      </TableCell>
+                      {identity && (
+                        <TableCell>
+                          <div className="flex gap-1 justify-end">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              data-ocid={`project.cost.edit_button.${i + 1}`}
+                              onClick={() => openEdit(c)}
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              data-ocid={`project.cost.delete_button.${i + 1}`}
+                              onClick={() => {
+                                if (confirm("Delete?"))
+                                  deleteMutation.mutate(c.id);
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           </Card>
         )}
       </div>
@@ -1379,6 +2449,397 @@ function BudgetTab({
               {isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Photo Progress Tab ─────────────────────────────────────────────────────────
+
+function PhotoProgressTab({ projectId }: { projectId: bigint }) {
+  const { actor, isFetching } = useActor();
+  const queryClient = useQueryClient();
+  const [showUpload, setShowUpload] = useState(false);
+  const [enlargedPhoto, setEnlargedPhoto] = useState<ProjectPhoto | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadDate, setUploadDate] = useState(
+    new Date().toISOString().split("T")[0],
+  );
+  const [uploadDesc, setUploadDesc] = useState("");
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  const { data: photos, isLoading } = useQuery<ProjectPhoto[]>({
+    queryKey: ["photos", projectId.toString()],
+    queryFn: async () => {
+      if (!actor) return [];
+      const result = await actor.getPhotosByProject(projectId);
+      return [...result].sort((a, b) =>
+        a.dateUploaded < b.dateUploaded ? -1 : 1,
+      );
+    },
+    enabled: !!actor && !isFetching,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      if (!actor || !uploadFile) throw new Error("Missing actor or file");
+      setUploadProgress(10);
+      const arrayBuffer = await uploadFile.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      setUploadProgress(50);
+      const photo: ProjectPhoto = {
+        id: 0n,
+        projectId,
+        reportId: 0n,
+        description: uploadDesc,
+        dateUploaded: dateToNs(uploadDate),
+        imageUrl: ExternalBlob.fromBytes(bytes),
+      };
+      await actor.addProjectPhoto(photo);
+      setUploadProgress(100);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["photos", projectId.toString()],
+      });
+      toast.success("Photo uploaded successfully");
+      setShowUpload(false);
+      setUploadFile(null);
+      setUploadDesc("");
+      setUploadDate(new Date().toISOString().split("T")[0]);
+      setUploadProgress(0);
+    },
+    onError: () => {
+      toast.error("Upload failed. Please try again.");
+      setUploadProgress(0);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: bigint) => {
+      if (!actor) throw new Error("No actor");
+      await actor.deleteProjectPhoto(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["photos", projectId.toString()],
+      });
+      toast.success("Photo deleted");
+    },
+    onError: () => toast.error("Delete failed"),
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold font-display text-foreground">
+            Photo Progress Timeline
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Visual record of construction progress over time
+          </p>
+        </div>
+        <Button
+          data-ocid="photos.upload_button"
+          onClick={() => setShowUpload(true)}
+          className="bg-[#1a3a6e] hover:bg-[#0a1628] text-white gap-2"
+        >
+          <Camera className="h-4 w-4" />
+          Upload Progress Photo
+        </Button>
+      </div>
+
+      {/* Timeline */}
+      {isLoading ? (
+        <div className="space-y-4" data-ocid="photos.loading_state">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex gap-4">
+              <Skeleton className="w-24 h-24 rounded-lg flex-shrink-0" />
+              <div className="space-y-2 flex-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : !photos || photos.length === 0 ? (
+        <div
+          className="flex flex-col items-center justify-center py-16 text-center"
+          data-ocid="photos.empty_state"
+        >
+          <div className="w-16 h-16 rounded-full bg-[#1a3a6e]/10 flex items-center justify-center mb-4">
+            <Image className="h-8 w-8 text-[#1a3a6e]" />
+          </div>
+          <h4 className="font-semibold text-foreground mb-1">
+            No progress photos yet
+          </h4>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Upload the first photo to start documenting your project&apos;s
+            progress
+          </p>
+          <Button
+            className="mt-4 bg-[#1a3a6e] hover:bg-[#0a1628] text-white gap-2"
+            onClick={() => setShowUpload(true)}
+          >
+            <Upload className="h-4 w-4" />
+            Upload First Photo
+          </Button>
+        </div>
+      ) : (
+        <div className="relative">
+          {/* Vertical timeline line */}
+          <div className="absolute left-5 top-0 bottom-0 w-0.5 bg-[#1a3a6e]/20 md:left-7" />
+
+          <div className="space-y-8">
+            {photos.map((photo, idx) => {
+              let imgUrl = "";
+              try {
+                imgUrl = photo.imageUrl.getDirectURL();
+              } catch {
+                imgUrl = "";
+              }
+              return (
+                <div
+                  key={photo.id.toString()}
+                  className="relative flex gap-4 md:gap-6"
+                  data-ocid={`photos.item.${idx + 1}`}
+                >
+                  {/* Timeline dot */}
+                  <div className="relative z-10 flex-shrink-0">
+                    <div className="w-10 h-10 md:w-14 md:h-14 rounded-full border-4 border-white shadow-md bg-[#D4A017] flex items-center justify-center">
+                      <Camera className="h-4 w-4 md:h-5 md:w-5 text-white" />
+                    </div>
+                  </div>
+
+                  {/* Card */}
+                  <Card className="flex-1 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                    <div className="flex flex-col sm:flex-row">
+                      {/* Image */}
+                      <button
+                        type="button"
+                        className="relative w-full sm:w-40 md:w-48 h-48 sm:h-auto flex-shrink-0 overflow-hidden group cursor-pointer"
+                        onClick={() => setEnlargedPhoto(photo)}
+                        data-ocid="photos.open_modal_button"
+                        aria-label="Enlarge photo"
+                      >
+                        {imgUrl ? (
+                          <img
+                            src={imgUrl}
+                            alt={photo.description || "Progress photo"}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-muted flex items-center justify-center">
+                            <Image className="h-8 w-8 text-muted-foreground" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                          <Maximize2 className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      </button>
+
+                      {/* Info */}
+                      <div className="flex-1 p-4 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <Calendar className="h-4 w-4 text-[#D4A017]" />
+                            <span className="text-sm font-semibold text-[#1a3a6e]">
+                              {formatDate(photo.dateUploaded)}
+                            </span>
+                          </div>
+                          <p className="text-sm text-foreground leading-relaxed">
+                            {photo.description || (
+                              <span className="italic text-muted-foreground">
+                                No description
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <div className="mt-3 flex justify-end">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-ocid={`photos.delete_button.${idx + 1}`}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => deleteMutation.mutate(photo.id)}
+                            disabled={deleteMutation.isPending}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Upload Dialog */}
+      <Dialog open={showUpload} onOpenChange={setShowUpload}>
+        <DialogContent data-ocid="photos.dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Camera className="h-5 w-5 text-[#D4A017]" />
+              Upload Progress Photo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Photo</Label>
+              <label
+                htmlFor="photo-file-input"
+                className="mt-1 block border-2 border-dashed border-[#1a3a6e]/30 rounded-lg p-6 text-center hover:border-[#1a3a6e]/60 transition-colors cursor-pointer"
+                data-ocid="photos.dropzone"
+              >
+                {uploadFile ? (
+                  <div className="space-y-1">
+                    <div className="w-10 h-10 rounded bg-[#D4A017]/20 flex items-center justify-center mx-auto">
+                      <Image className="h-5 w-5 text-[#D4A017]" />
+                    </div>
+                    <p className="text-sm font-medium text-foreground">
+                      {uploadFile.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {(uploadFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Upload className="h-8 w-8 text-[#1a3a6e]/40 mx-auto" />
+                    <p className="text-sm text-muted-foreground">
+                      Click to select an image
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      JPG, PNG, WEBP up to 10MB
+                    </p>
+                  </div>
+                )}
+                <input
+                  id="photo-file-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  data-ocid="photos.upload_button"
+                  onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+
+            <div>
+              <Label htmlFor="photo-date">Date</Label>
+              <Input
+                id="photo-date"
+                type="date"
+                data-ocid="photos.input"
+                value={uploadDate}
+                onChange={(e) => setUploadDate(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="photo-desc">Description</Label>
+              <Textarea
+                id="photo-desc"
+                data-ocid="photos.textarea"
+                value={uploadDesc}
+                onChange={(e) => setUploadDesc(e.target.value)}
+                placeholder="e.g. Foundation completed, Columns poured..."
+                rows={3}
+              />
+            </div>
+
+            {addMutation.isPending && uploadProgress > 0 && (
+              <div data-ocid="photos.loading_state">
+                <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                  <span>Uploading...</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <Progress value={uploadProgress} className="h-2" />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              data-ocid="photos.cancel_button"
+              onClick={() => {
+                setShowUpload(false);
+                setUploadFile(null);
+                setUploadDesc("");
+                setUploadProgress(0);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-ocid="photos.submit_button"
+              onClick={() => addMutation.mutate()}
+              disabled={!uploadFile || addMutation.isPending}
+              className="bg-[#1a3a6e] hover:bg-[#0a1628] text-white"
+            >
+              {addMutation.isPending ? "Uploading..." : "Upload Photo"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Enlarge Dialog */}
+      <Dialog
+        open={!!enlargedPhoto}
+        onOpenChange={(v) => {
+          if (!v) setEnlargedPhoto(null);
+        }}
+      >
+        <DialogContent
+          className="max-w-3xl p-0 overflow-hidden"
+          data-ocid="photos.modal"
+        >
+          {enlargedPhoto &&
+            (() => {
+              let imgUrl = "";
+              try {
+                imgUrl = enlargedPhoto.imageUrl.getDirectURL();
+              } catch {
+                imgUrl = "";
+              }
+              return (
+                <>
+                  {imgUrl && (
+                    <img
+                      src={imgUrl}
+                      alt={enlargedPhoto.description || "Progress photo"}
+                      className="w-full max-h-[70vh] object-contain bg-black"
+                    />
+                  )}
+                  <div className="p-4 bg-[#0a1628] text-white flex items-center gap-3">
+                    <Calendar className="h-4 w-4 text-[#D4A017] flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-[#D4A017]">
+                        {formatDate(enlargedPhoto.dateUploaded)}
+                      </p>
+                      <p className="text-sm text-white/80 mt-0.5">
+                        {enlargedPhoto.description || "No description"}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      data-ocid="photos.close_button"
+                      className="ml-auto text-white hover:bg-white/10"
+                      onClick={() => setEnlargedPhoto(null)}
+                    >
+                      Close
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
         </DialogContent>
       </Dialog>
     </div>

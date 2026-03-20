@@ -8,7 +8,15 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { FolderKanban, LayoutDashboard, LogIn, LogOut } from "lucide-react";
+import {
+  FolderKanban,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
+
 import { useState } from "react";
 import SplashScreen from "./components/SplashScreen";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
@@ -16,7 +24,7 @@ import Dashboard from "./pages/Dashboard";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 
-function Nav() {
+function Nav({ onClose }: { onClose?: () => void }) {
   const { identity, login, clear, isLoggingIn } = useInternetIdentity();
   const isLoggedIn = !!identity;
 
@@ -40,6 +48,7 @@ function Nav() {
         <Link
           to="/"
           data-ocid="nav.dashboard.link"
+          onClick={onClose}
           activeProps={{
             className:
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors bg-sidebar-primary text-sidebar-primary-foreground",
@@ -56,6 +65,7 @@ function Nav() {
         <Link
           to="/projects"
           data-ocid="nav.projects.link"
+          onClick={onClose}
           activeProps={{
             className:
               "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors bg-sidebar-primary text-sidebar-primary-foreground",
@@ -98,10 +108,53 @@ function Nav() {
 }
 
 function RootLayout() {
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   return (
     <div className="flex min-h-screen">
-      <Nav />
-      <main className="ml-56 flex-1 min-h-screen bg-background">
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        <Nav />
+      </div>
+
+      {/* Mobile top bar */}
+      <header className="fixed top-0 left-0 right-0 h-14 bg-sidebar text-sidebar-foreground flex items-center px-4 gap-3 md:hidden z-20 border-b border-sidebar-border">
+        <button
+          type="button"
+          data-ocid="nav.mobile_menu.button"
+          onClick={() => setMobileNavOpen(true)}
+          className="p-1 rounded-md hover:bg-sidebar-accent transition-colors"
+          aria-label="Open navigation"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <span className="font-display font-bold text-sm">BuildTrack</span>
+      </header>
+
+      {/* Mobile nav overlay */}
+      {mobileNavOpen && (
+        <>
+          <button
+            type="button"
+            aria-label="Close navigation"
+            className="fixed inset-0 bg-black/50 z-40 md:hidden cursor-default"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <div className="fixed left-0 top-0 h-full w-64 z-50 md:hidden shadow-xl">
+            <Nav onClose={() => setMobileNavOpen(false)} />
+            <button
+              type="button"
+              onClick={() => setMobileNavOpen(false)}
+              className="absolute top-3 right-3 p-1 rounded-md text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+              aria-label="Close navigation"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </>
+      )}
+
+      <main className="md:ml-56 flex-1 min-h-screen bg-background pt-14 md:pt-0">
         <Outlet />
       </main>
       <Toaster />
