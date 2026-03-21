@@ -60,6 +60,10 @@ export interface Material {
     quantity: number;
     unitCost: number;
 }
+export interface UserApprovalInfo {
+    status: ApprovalStatus;
+    principal: Principal;
+}
 export interface ProjectCostSummary {
     status: ProjectStatus;
     remainingBudget: number;
@@ -96,6 +100,11 @@ export interface Project {
 }
 export interface UserProfile {
     name: string;
+}
+export enum ApprovalStatus {
+    pending = "pending",
+    approved = "approved",
+    rejected = "rejected"
 }
 export enum ProjectStage {
     foundation = "foundation",
@@ -135,11 +144,24 @@ export interface backendInterface {
      */
     deleteProjectPhoto(id: bigint): Promise<void>;
     deleteReport(id: bigint): Promise<void>;
+    getActiveUsers(): Promise<Array<Principal>>;
     getAllProjectCostSummaries(): Promise<Array<ProjectCostSummary>>;
+    /**
+     * / --- BOQ Items ---
+     */
     getBoqItemsByProject(projectId: bigint): Promise<Array<BoqItem>>;
+    /**
+     * / --- User Profiles ---
+     */
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    /**
+     * / --- Cost Entries ---
+     */
     getCostEntriesByProject(projectId: bigint): Promise<Array<CostEntry>>;
+    /**
+     * / --- Dashboard Stats ---
+     */
     getDashboardStats(): Promise<{
         foundationCount: bigint;
         onHoldCount: bigint;
@@ -151,16 +173,44 @@ export interface backendInterface {
         planningCount: bigint;
         finishingCount: bigint;
     }>;
+    /**
+     * / --- Labour ---
+     */
     getLabourByProject(projectId: bigint): Promise<Array<Labour>>;
+    /**
+     * / --- Materials ---
+     */
     getMaterialsByProject(projectId: bigint): Promise<Array<Material>>;
     getProjectById(id: bigint): Promise<Project | null>;
     getProjectCostSummary(projectId: bigint): Promise<ProjectCostSummary | null>;
+    /**
+     * / --- Project Photos (by project or report) ---
+     */
     getProjectPhotosByProject(projectId: bigint): Promise<Array<ProjectPhoto>>;
+    /**
+     * / --- Projects ---
+     */
     getProjects(): Promise<Array<Project>>;
+    /**
+     * / --- Daily Site Reports ---
+     */
     getReportsByProject(projectId: bigint): Promise<Array<DailySiteReport>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    /**
+     * / --- Approval System (admin guard required) ---
+     */
+    isCallerApproved(): Promise<boolean>;
+    listApprovals(): Promise<Array<UserApprovalInfo>>;
+    /**
+     * / Trivial invite admin function (TO REMOVE) (admin guard)
+     * / --- User Active Tracking ---
+     */
+    recordLogin(): Promise<void>;
+    recordLogout(): Promise<void>;
+    requestApproval(): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setApproval(user: Principal, status: ApprovalStatus): Promise<void>;
     updateBOQItem(item: BoqItem): Promise<void>;
     updateCostEntry(cost: CostEntry): Promise<void>;
     updateLabour(labour: Labour): Promise<void>;

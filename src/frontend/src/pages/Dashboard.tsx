@@ -30,7 +30,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ProjectStage, ProjectStatus } from "../backend";
+import { ApprovalStatus, ProjectStage, ProjectStatus } from "../backend";
+import { useAuth } from "../contexts/AuthContext";
 import { useActor } from "../hooks/useActor";
 import { formatCurrency, formatDate } from "../lib/appUtils";
 import {
@@ -86,6 +87,33 @@ const STAGE_ACCENT_COLORS: Record<ProjectStage, string> = {
 
 export default function Dashboard() {
   const { actor } = useActor();
+  const { isAdmin } = useAuth();
+
+  const { data: approvals } = useQuery({
+    queryKey: ["approvals"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.listApprovals();
+    },
+    enabled: !!actor && isAdmin,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const { data: activeUsers } = useQuery({
+    queryKey: ["active-users"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getActiveUsers();
+    },
+    enabled: !!actor && isAdmin,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const pendingCount = (approvals ?? []).filter(
+    (a) => a.status === ApprovalStatus.pending,
+  ).length;
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ["dashboard-stats"],
@@ -193,6 +221,36 @@ export default function Dashboard() {
 
   return (
     <div data-ocid="dashboard.page" className="p-4 md:p-8">
+      {/* Admin: Pending approval banner */}
+      {isAdmin && pendingCount > 0 && (
+        <div
+          data-ocid="dashboard.approval.error_state"
+          className="mb-6 flex items-center gap-3 p-4 rounded-lg border"
+          style={{
+            background: "oklch(0.85 0.15 85 / 0.12)",
+            borderColor: "oklch(0.75 0.18 85 / 0.4)",
+          }}
+        >
+          <span className="text-xl">⚠</span>
+          <div className="flex-1">
+            <p
+              className="text-sm font-semibold"
+              style={{ color: "oklch(0.75 0.18 85)" }}
+            >
+              {pendingCount} user{pendingCount !== 1 ? "s" : ""} awaiting
+              approval
+            </p>
+          </div>
+          <Link
+            to="/users"
+            className="text-xs font-medium underline shrink-0"
+            style={{ color: "oklch(0.75 0.18 85)" }}
+          >
+            Review →
+          </Link>
+        </div>
+      )}
+
       <div className="mb-8">
         <h1 className="font-display text-3xl font-700 text-foreground">
           Dashboard
@@ -523,6 +581,54 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      {/* Admin: Active Users Panel */}
+      {isAdmin && (
+        <div className="mb-8">
+          <h2 className="font-display text-lg font-600 mb-4 flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-green-500 inline-block animate-pulse" />
+            Active Users
+            {(activeUsers ?? []).length > 0 && (
+              <span className="text-sm font-normal text-muted-foreground ml-1">
+                ({(activeUsers ?? []).length} online)
+              </span>
+            )}
+          </h2>
+          <Card data-ocid="dashboard.active_users.card">
+            <CardContent className="pt-4">
+              {(activeUsers ?? []).length === 0 ? (
+                <p
+                  data-ocid="dashboard.active_users.empty_state"
+                  className="text-sm text-muted-foreground py-4 text-center"
+                >
+                  No users currently active
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(activeUsers ?? []).map((principal, idx) => {
+                    const pStr = principal.toString();
+                    const truncated =
+                      pStr.length > 14
+                        ? `${pStr.slice(0, 8)}...${pStr.slice(-4)}`
+                        : pStr;
+                    return (
+                      <div
+                        key={pStr}
+                        data-ocid={`dashboard.active_users.item.${idx + 1}`}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs"
+                        style={{ borderColor: "oklch(var(--border))" }}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                        <span className="font-mono">{truncated}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Projects by Stage Summary */}
       <div className="mb-8">

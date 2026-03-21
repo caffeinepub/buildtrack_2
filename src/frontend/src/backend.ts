@@ -142,6 +142,10 @@ export interface Material {
     quantity: number;
     unitCost: number;
 }
+export interface UserApprovalInfo {
+    status: ApprovalStatus;
+    principal: Principal;
+}
 export interface ProjectCostSummary {
     status: ProjectStatus;
     remainingBudget: number;
@@ -182,6 +186,11 @@ export interface UserProfile {
 export interface _CaffeineStorageRefillResult {
     success?: boolean;
     topped_up_amount?: bigint;
+}
+export enum ApprovalStatus {
+    pending = "pending",
+    approved = "approved",
+    rejected = "rejected"
 }
 export enum ProjectStage {
     foundation = "foundation",
@@ -228,11 +237,24 @@ export interface backendInterface {
      */
     deleteProjectPhoto(id: bigint): Promise<void>;
     deleteReport(id: bigint): Promise<void>;
+    getActiveUsers(): Promise<Array<Principal>>;
     getAllProjectCostSummaries(): Promise<Array<ProjectCostSummary>>;
+    /**
+     * / --- BOQ Items ---
+     */
     getBoqItemsByProject(projectId: bigint): Promise<Array<BoqItem>>;
+    /**
+     * / --- User Profiles ---
+     */
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    /**
+     * / --- Cost Entries ---
+     */
     getCostEntriesByProject(projectId: bigint): Promise<Array<CostEntry>>;
+    /**
+     * / --- Dashboard Stats ---
+     */
     getDashboardStats(): Promise<{
         foundationCount: bigint;
         onHoldCount: bigint;
@@ -244,16 +266,44 @@ export interface backendInterface {
         planningCount: bigint;
         finishingCount: bigint;
     }>;
+    /**
+     * / --- Labour ---
+     */
     getLabourByProject(projectId: bigint): Promise<Array<Labour>>;
+    /**
+     * / --- Materials ---
+     */
     getMaterialsByProject(projectId: bigint): Promise<Array<Material>>;
     getProjectById(id: bigint): Promise<Project | null>;
     getProjectCostSummary(projectId: bigint): Promise<ProjectCostSummary | null>;
+    /**
+     * / --- Project Photos (by project or report) ---
+     */
     getProjectPhotosByProject(projectId: bigint): Promise<Array<ProjectPhoto>>;
+    /**
+     * / --- Projects ---
+     */
     getProjects(): Promise<Array<Project>>;
+    /**
+     * / --- Daily Site Reports ---
+     */
     getReportsByProject(projectId: bigint): Promise<Array<DailySiteReport>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     isCallerAdmin(): Promise<boolean>;
+    /**
+     * / --- Approval System (admin guard required) ---
+     */
+    isCallerApproved(): Promise<boolean>;
+    listApprovals(): Promise<Array<UserApprovalInfo>>;
+    /**
+     * / Trivial invite admin function (TO REMOVE) (admin guard)
+     * / --- User Active Tracking ---
+     */
+    recordLogin(): Promise<void>;
+    recordLogout(): Promise<void>;
+    requestApproval(): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setApproval(user: Principal, status: ApprovalStatus): Promise<void>;
     updateBOQItem(item: BoqItem): Promise<void>;
     updateCostEntry(cost: CostEntry): Promise<void>;
     updateLabour(labour: Labour): Promise<void>;
@@ -261,7 +311,7 @@ export interface backendInterface {
     updateProject(id: bigint, updatedProject: Project): Promise<void>;
     updateReport(report: DailySiteReport): Promise<void>;
 }
-import type { ExternalBlob as _ExternalBlob, Project as _Project, ProjectCostSummary as _ProjectCostSummary, ProjectPhoto as _ProjectPhoto, ProjectStage as _ProjectStage, ProjectStatus as _ProjectStatus, Time as _Time, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
+import type { ApprovalStatus as _ApprovalStatus, ExternalBlob as _ExternalBlob, Project as _Project, ProjectCostSummary as _ProjectCostSummary, ProjectPhoto as _ProjectPhoto, ProjectStage as _ProjectStage, ProjectStatus as _ProjectStatus, Time as _Time, UserApprovalInfo as _UserApprovalInfo, UserProfile as _UserProfile, UserRole as _UserRole, _CaffeineStorageRefillInformation as __CaffeineStorageRefillInformation, _CaffeineStorageRefillResult as __CaffeineStorageRefillResult } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _caffeineStorageBlobIsLive(arg0: Uint8Array): Promise<boolean> {
@@ -572,6 +622,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getActiveUsers(): Promise<Array<Principal>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getActiveUsers();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getActiveUsers();
+            return result;
+        }
+    }
     async getAllProjectCostSummaries(): Promise<Array<ProjectCostSummary>> {
         if (this.processError) {
             try {
@@ -792,6 +856,76 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async isCallerApproved(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.isCallerApproved();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.isCallerApproved();
+            return result;
+        }
+    }
+    async listApprovals(): Promise<Array<UserApprovalInfo>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.listApprovals();
+                return from_candid_vec_n38(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.listApprovals();
+            return from_candid_vec_n38(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async recordLogin(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordLogin();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordLogin();
+            return result;
+        }
+    }
+    async recordLogout(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.recordLogout();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.recordLogout();
+            return result;
+        }
+    }
+    async requestApproval(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.requestApproval();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.requestApproval();
+            return result;
+        }
+    }
     async saveCallerUserProfile(arg0: UserProfile): Promise<void> {
         if (this.processError) {
             try {
@@ -803,6 +937,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.saveCallerUserProfile(arg0);
+            return result;
+        }
+    }
+    async setApproval(arg0: Principal, arg1: ApprovalStatus): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setApproval(arg0, to_candid_ApprovalStatus_n43(this._uploadFile, this._downloadFile, arg1));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setApproval(arg0, to_candid_ApprovalStatus_n43(this._uploadFile, this._downloadFile, arg1));
             return result;
         }
     }
@@ -891,6 +1039,9 @@ export class Backend implements backendInterface {
         }
     }
 }
+function from_candid_ApprovalStatus_n41(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _ApprovalStatus): ApprovalStatus {
+    return from_candid_variant_n42(_uploadFile, _downloadFile, value);
+}
 async function from_candid_ExternalBlob_n36(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _ExternalBlob): Promise<ExternalBlob> {
     return await _downloadFile(value);
 }
@@ -908,6 +1059,9 @@ function from_candid_ProjectStatus_n22(_uploadFile: (file: ExternalBlob) => Prom
 }
 function from_candid_Project_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _Project): Project {
     return from_candid_record_n29(_uploadFile, _downloadFile, value);
+}
+function from_candid_UserApprovalInfo_n39(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserApprovalInfo): UserApprovalInfo {
+    return from_candid_record_n40(_uploadFile, _downloadFile, value);
 }
 function from_candid_UserRole_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
     return from_candid_variant_n26(_uploadFile, _downloadFile, value);
@@ -1032,6 +1186,18 @@ async function from_candid_record_n35(_uploadFile: (file: ExternalBlob) => Promi
         reportId: value.reportId
     };
 }
+function from_candid_record_n40(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    status: _ApprovalStatus;
+    principal: Principal;
+}): {
+    status: ApprovalStatus;
+    principal: Principal;
+} {
+    return {
+        status: from_candid_ApprovalStatus_n41(_uploadFile, _downloadFile, value.status),
+        principal: value.principal
+    };
+}
 function from_candid_record_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     success: [] | [boolean];
     topped_up_amount: [] | [bigint];
@@ -1077,6 +1243,15 @@ function from_candid_variant_n31(_uploadFile: (file: ExternalBlob) => Promise<Ui
 }): ProjectStage {
     return "foundation" in value ? ProjectStage.foundation : "structure" in value ? ProjectStage.structure : "completed" in value ? ProjectStage.completed : "finishing" in value ? ProjectStage.finishing : "planning" in value ? ProjectStage.planning : value;
 }
+function from_candid_variant_n42(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    pending: null;
+} | {
+    approved: null;
+} | {
+    rejected: null;
+}): ApprovalStatus {
+    return "pending" in value ? ApprovalStatus.pending : "approved" in value ? ApprovalStatus.approved : "rejected" in value ? ApprovalStatus.rejected : value;
+}
 function from_candid_vec_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_ProjectCostSummary>): Array<ProjectCostSummary> {
     return value.map((x)=>from_candid_ProjectCostSummary_n20(_uploadFile, _downloadFile, x));
 }
@@ -1085,6 +1260,12 @@ async function from_candid_vec_n33(_uploadFile: (file: ExternalBlob) => Promise<
 }
 function from_candid_vec_n37(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_Project>): Array<Project> {
     return value.map((x)=>from_candid_Project_n28(_uploadFile, _downloadFile, x));
+}
+function from_candid_vec_n38(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_UserApprovalInfo>): Array<UserApprovalInfo> {
+    return value.map((x)=>from_candid_UserApprovalInfo_n39(_uploadFile, _downloadFile, x));
+}
+function to_candid_ApprovalStatus_n43(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: ApprovalStatus): _ApprovalStatus {
+    return to_candid_variant_n44(_uploadFile, _downloadFile, value);
 }
 async function to_candid_ExternalBlob_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: ExternalBlob): Promise<_ExternalBlob> {
     return await _uploadFile(value);
@@ -1243,6 +1424,21 @@ function to_candid_variant_n18(_uploadFile: (file: ExternalBlob) => Promise<Uint
         finishing: null
     } : value == ProjectStage.planning ? {
         planning: null
+    } : value;
+}
+function to_candid_variant_n44(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: ApprovalStatus): {
+    pending: null;
+} | {
+    approved: null;
+} | {
+    rejected: null;
+} {
+    return value == ApprovalStatus.pending ? {
+        pending: null
+    } : value == ApprovalStatus.approved ? {
+        approved: null
+    } : value == ApprovalStatus.rejected ? {
+        rejected: null
     } : value;
 }
 export interface CreateActorOptions {

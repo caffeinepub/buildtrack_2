@@ -10,6 +10,9 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export type ApprovalStatus = { 'pending' : null } |
+  { 'approved' : null } |
+  { 'rejected' : null };
 export interface BoqItem {
   'id' : bigint,
   'plannedQuantity' : number,
@@ -100,6 +103,10 @@ export type ProjectStatus = { 'active' : null } |
   { 'onHold' : null } |
   { 'planning' : null };
 export type Time = bigint;
+export interface UserApprovalInfo {
+  'status' : ApprovalStatus,
+  'principal' : Principal,
+}
 export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
@@ -151,11 +158,24 @@ export interface _SERVICE {
    */
   'deleteProjectPhoto' : ActorMethod<[bigint], undefined>,
   'deleteReport' : ActorMethod<[bigint], undefined>,
+  'getActiveUsers' : ActorMethod<[], Array<Principal>>,
   'getAllProjectCostSummaries' : ActorMethod<[], Array<ProjectCostSummary>>,
+  /**
+   * / --- BOQ Items ---
+   */
   'getBoqItemsByProject' : ActorMethod<[bigint], Array<BoqItem>>,
+  /**
+   * / --- User Profiles ---
+   */
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  /**
+   * / --- Cost Entries ---
+   */
   'getCostEntriesByProject' : ActorMethod<[bigint], Array<CostEntry>>,
+  /**
+   * / --- Dashboard Stats ---
+   */
   'getDashboardStats' : ActorMethod<
     [],
     {
@@ -170,16 +190,44 @@ export interface _SERVICE {
       'finishingCount' : bigint,
     }
   >,
+  /**
+   * / --- Labour ---
+   */
   'getLabourByProject' : ActorMethod<[bigint], Array<Labour>>,
+  /**
+   * / --- Materials ---
+   */
   'getMaterialsByProject' : ActorMethod<[bigint], Array<Material>>,
   'getProjectById' : ActorMethod<[bigint], [] | [Project]>,
   'getProjectCostSummary' : ActorMethod<[bigint], [] | [ProjectCostSummary]>,
+  /**
+   * / --- Project Photos (by project or report) ---
+   */
   'getProjectPhotosByProject' : ActorMethod<[bigint], Array<ProjectPhoto>>,
+  /**
+   * / --- Projects ---
+   */
   'getProjects' : ActorMethod<[], Array<Project>>,
+  /**
+   * / --- Daily Site Reports ---
+   */
   'getReportsByProject' : ActorMethod<[bigint], Array<DailySiteReport>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  /**
+   * / --- Approval System (admin guard required) ---
+   */
+  'isCallerApproved' : ActorMethod<[], boolean>,
+  'listApprovals' : ActorMethod<[], Array<UserApprovalInfo>>,
+  /**
+   * / Trivial invite admin function (TO REMOVE) (admin guard)
+   * / --- User Active Tracking ---
+   */
+  'recordLogin' : ActorMethod<[], undefined>,
+  'recordLogout' : ActorMethod<[], undefined>,
+  'requestApproval' : ActorMethod<[], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'setApproval' : ActorMethod<[Principal, ApprovalStatus], undefined>,
   'updateBOQItem' : ActorMethod<[BoqItem], undefined>,
   'updateCostEntry' : ActorMethod<[CostEntry], undefined>,
   'updateLabour' : ActorMethod<[Labour], undefined>,

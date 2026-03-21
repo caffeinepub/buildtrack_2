@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
+import { useQuery } from "@tanstack/react-query";
 import {
   Link,
   Outlet,
@@ -7,8 +8,6 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  redirect,
-  useNavigate,
 } from "@tanstack/react-router";
 import {
   FolderKanban,
@@ -20,10 +19,13 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import { ApprovalStatus } from "./backend";
 import SplashScreen from "./components/SplashScreen";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { useActor } from "./hooks/useActor";
 import Dashboard from "./pages/Dashboard";
 import LoginPage from "./pages/LoginPage";
+import PendingApprovalPage from "./pages/PendingApprovalPage";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import SetupPage from "./pages/SetupPage";
@@ -46,7 +48,23 @@ const ROLE_BADGE: Record<string, { label: string; className: string }> = {
 
 function Nav({ onClose }: { onClose?: () => void }) {
   const { identity, userProfile, userRole, isAdmin, logout } = useAuth();
+  const { actor } = useActor();
   const roleInfo = ROLE_BADGE[userRole] ?? ROLE_BADGE.guest;
+
+  const { data: approvals } = useQuery({
+    queryKey: ["approvals"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.listApprovals();
+    },
+    enabled: !!actor && isAdmin,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
+  const pendingCount = (approvals ?? []).filter(
+    (a) => a.status === ApprovalStatus.pending,
+  ).length;
 
   return (
     <aside className="fixed top-0 left-0 h-full w-56 bg-sidebar text-sidebar-foreground flex flex-col z-30">
@@ -113,7 +131,12 @@ function Nav({ onClose }: { onClose?: () => void }) {
             }}
           >
             <Shield className="w-4 h-4" />
-            Users
+            <span className="flex-1">Users</span>
+            {pendingCount > 0 && (
+              <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                {pendingCount}
+              </span>
+            )}
           </Link>
         )}
       </nav>
@@ -173,8 +196,19 @@ function Nav({ onClose }: { onClose?: () => void }) {
 
 function RootLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { identity, userProfile, userRole, logout } = useAuth();
+  const { identity, userProfile, userRole, isPending, isLoading, logout } =
+    useAuth();
   const roleInfo = ROLE_BADGE[userRole] ?? ROLE_BADGE.guest;
+
+  // If user is authenticated but pending approval, show blocking page
+  if (!isLoading && isPending) {
+    return (
+      <div className="min-h-screen">
+        <PendingApprovalPage />
+        <Toaster />
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen">
@@ -251,7 +285,7 @@ function RootLayout() {
   );
 }
 
-// ─── Routes ─────────────────────────────────────────────────────────────────
+// ─── Routes ─────────────────────────────────────────────────────────────────────────────
 
 const rootRoute = createRootRoute({
   component: () => (

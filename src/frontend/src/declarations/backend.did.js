@@ -119,6 +119,15 @@ export const ProjectCostSummary = IDL.Record({
   'budget' : IDL.Float64,
 });
 export const UserProfile = IDL.Record({ 'name' : IDL.Text });
+export const ApprovalStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'approved' : IDL.Null,
+  'rejected' : IDL.Null,
+});
+export const UserApprovalInfo = IDL.Record({
+  'status' : ApprovalStatus,
+  'principal' : IDL.Principal,
+});
 
 export const idlService = IDL.Service({
   '_caffeineStorageBlobIsLive' : IDL.Func(
@@ -163,6 +172,7 @@ export const idlService = IDL.Service({
   'deleteProject' : IDL.Func([IDL.Nat], [], []),
   'deleteProjectPhoto' : IDL.Func([IDL.Nat], [], []),
   'deleteReport' : IDL.Func([IDL.Nat], [], []),
+  'getActiveUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
   'getAllProjectCostSummaries' : IDL.Func(
       [],
       [IDL.Vec(ProjectCostSummary)],
@@ -218,7 +228,13 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'isCallerApproved' : IDL.Func([], [IDL.Bool], ['query']),
+  'listApprovals' : IDL.Func([], [IDL.Vec(UserApprovalInfo)], ['query']),
+  'recordLogin' : IDL.Func([], [], []),
+  'recordLogout' : IDL.Func([], [], []),
+  'requestApproval' : IDL.Func([], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'setApproval' : IDL.Func([IDL.Principal, ApprovalStatus], [], []),
   'updateBOQItem' : IDL.Func([BoqItem], [], []),
   'updateCostEntry' : IDL.Func([CostEntry], [], []),
   'updateLabour' : IDL.Func([Labour], [], []),
@@ -341,6 +357,15 @@ export const idlFactory = ({ IDL }) => {
     'budget' : IDL.Float64,
   });
   const UserProfile = IDL.Record({ 'name' : IDL.Text });
+  const ApprovalStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'approved' : IDL.Null,
+    'rejected' : IDL.Null,
+  });
+  const UserApprovalInfo = IDL.Record({
+    'status' : ApprovalStatus,
+    'principal' : IDL.Principal,
+  });
   
   return IDL.Service({
     '_caffeineStorageBlobIsLive' : IDL.Func(
@@ -385,6 +410,7 @@ export const idlFactory = ({ IDL }) => {
     'deleteProject' : IDL.Func([IDL.Nat], [], []),
     'deleteProjectPhoto' : IDL.Func([IDL.Nat], [], []),
     'deleteReport' : IDL.Func([IDL.Nat], [], []),
+    'getActiveUsers' : IDL.Func([], [IDL.Vec(IDL.Principal)], ['query']),
     'getAllProjectCostSummaries' : IDL.Func(
         [],
         [IDL.Vec(ProjectCostSummary)],
@@ -444,7 +470,13 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'isCallerApproved' : IDL.Func([], [IDL.Bool], ['query']),
+    'listApprovals' : IDL.Func([], [IDL.Vec(UserApprovalInfo)], ['query']),
+    'recordLogin' : IDL.Func([], [], []),
+    'recordLogout' : IDL.Func([], [], []),
+    'requestApproval' : IDL.Func([], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'setApproval' : IDL.Func([IDL.Principal, ApprovalStatus], [], []),
     'updateBOQItem' : IDL.Func([BoqItem], [], []),
     'updateCostEntry' : IDL.Func([CostEntry], [], []),
     'updateLabour' : IDL.Func([Labour], [], []),

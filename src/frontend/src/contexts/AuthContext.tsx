@@ -1,5 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { type UserProfile, UserRole } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
@@ -13,6 +20,8 @@ interface AuthContextValue {
   isGuest: boolean;
   canWrite: boolean;
   isLoading: boolean;
+  isApproved: boolean;
+  isPending: boolean;
   login: () => void;
   logout: () => void;
   refreshUser: () => void;
@@ -24,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { identity, login, clear, isInitializing } = useInternetIdentity();
   const { actor, isFetching: actorFetching } = useActor();
   const qc = useQueryClient();
+  const prevIdentityRef = useRef<string | null>(null);
 
   const { data: userProfile, isLoading: profileLoading } = useQuery({
     queryKey: ["auth", "profile", identity?.getPrincipal().toString()],
@@ -45,6 +55,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     staleTime: 30_000,
   });
 
+  const { data: isApprovedData, isLoading: approvalLoading } = useQuery({
+    queryKey: ["auth", "approved", identity?.getPrincipal().toString()],
+    queryFn: async () => {
+      if (!actor) return false;
+      return actor.isCallerApproved();
+    },
+    enabled: !!actor && !!identity && !actorFetching,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+
   const effectiveRole = identity
     ? (userRole ?? UserRole.guest)
     : UserRole.guest;
@@ -52,19 +73,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isUser = effectiveRole === UserRole.user;
   const isGuest = effectiveRole === UserRole.guest;
   const canWrite = isAdmin || isUser;
+  const isApproved = isAdmin || (isApprovedData ?? false);
+  const isPending = !!identity && !isAdmin && !isApproved;
+
   const isLoading =
     isInitializing ||
     actorFetching ||
-    (!!identity && (profileLoading || roleLoading));
+    (!!identity && (profileLoading || roleLoading || approvalLoading));
+
+  // Record login when identity first appears
+  useEffect(() => {
+    const principalStr = identity?.getPrincipal().toString() ?? null;
+    if (
+      principalStr &&
+      principalStr !== prevIdentityRef.current &&
+      actor &&
+      !actorFetching
+    ) {
+      prevIdentityRef.current = principalStr;
+      actor.recordLogin().catch(() => {});
+    }
+    if (!principalStr) {
+      prevIdentityRef.current = null;
+    }
+  }, [identity, actor, actorFetching]);
 
   const refreshUser = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["auth"] });
   }, [qc]);
 
   const logout = useCallback(() => {
+    if (actor) {
+      actor.recordLogout().catch(() => {});
+    }
     clear();
     qc.clear();
-  }, [clear, qc]);
+  }, [actor, clear, qc]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -76,6 +120,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isGuest,
       canWrite,
       isLoading,
+      isApproved,
+      isPending,
       login,
       logout,
       refreshUser,
@@ -89,6 +135,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isGuest,
       canWrite,
       isLoading,
+      isApproved,
+      isPending,
       login,
       logout,
       refreshUser,
