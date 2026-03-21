@@ -12,10 +12,10 @@ import Storage "blob-storage/Storage";
 import MixinStorage "blob-storage/Mixin";
 import AccessControl "authorization/access-control";
 import MixinAuthorization "authorization/MixinAuthorization";
-import Migration "migration";
+
 import UserApproval "user-approval/approval";
 
-(with migration = Migration.run)
+
 actor {
   include MixinStorage();
 
