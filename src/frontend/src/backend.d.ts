@@ -91,6 +91,7 @@ export interface Project {
     clientName: string;
     name: string;
     createdAt: Time;
+    updatedAt: Time;
     description: string;
     currentProgressPercentage: number;
     stage: ProjectStage;

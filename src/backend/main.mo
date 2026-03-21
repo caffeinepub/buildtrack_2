@@ -34,6 +34,24 @@ actor {
     currentProgressPercentage : Float;
   };
 
+
+  // V1 Project type (pre-updatedAt) -- used for stable migration from deployed state
+  type ProjectV1 = {
+    id : Nat;
+    name : Text;
+    clientName : Text;
+    description : Text;
+    location : Text;
+    startDate : Time.Time;
+    endDate : Time.Time;
+    status : ProjectStatus;
+    budget : Float;
+    stage : ProjectStage;
+    estimatedDurationDays : Float;
+    currentProgressPercentage : Float;
+    createdAt : Time.Time;
+  };
+
   /// -- Project Types --
 
   type Project = {
@@ -50,6 +68,7 @@ actor {
     estimatedDurationDays : Float;
     currentProgressPercentage : Float;
     createdAt : Time.Time;
+    updatedAt : Time.Time;
   };
 
   type ProjectStatus = { #planning; #active; #completed; #onHold };
@@ -277,7 +296,10 @@ actor {
   // "projects" keeps the old type to absorb pre-v19 stable data during upgrade
   let projects = Map.empty<Nat, ProjectLegacy>();
   // Runtime storage with new Project type (populated via postupgrade migration)
-  let projectsStore = Map.empty<Nat, Project>();
+  // projectsStore holds V1 (no updatedAt) to absorb existing stable data
+  let projectsStore = Map.empty<Nat, ProjectV1>();
+  // V2 stores current Project type with updatedAt
+  let projectsStoreV2 = Map.empty<Nat, Project>();
   let reports = Map.empty<Nat, DailySiteReport>();
   let materials = Map.empty<Nat, Material>();
   let costs = Map.empty<Nat, CostEntry>();
@@ -439,7 +461,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view projects");
     };
     requireApprovedUser(caller);
-    projectsStore.values().toArray();
+    projectsStoreV2.values().toArray();
   };
 
   public query ({ caller }) func getProjectById(id : Nat) : async ?Project {
@@ -447,7 +469,7 @@ actor {
       Runtime.trap("Unauthorized: Only users can view projects");
     };
     requireApprovedUser(caller);
-    projectsStore.get(id);
+    projectsStoreV2.get(id);
   };
 
   public shared ({ caller }) func createProject(project : Project) : async Nat {
@@ -473,9 +495,10 @@ actor {
       estimatedDurationDays = project.estimatedDurationDays;
       currentProgressPercentage = project.currentProgressPercentage;
       createdAt = Time.now();
+      updatedAt = Time.now();
     };
 
-    projectsStore.add(projectId, newProject);
+    projectsStoreV2.add(projectId, newProject);
     projectId;
   };
 
@@ -485,13 +508,13 @@ actor {
     };
     requireApprovedUser(caller);
 
-    let existingProject = switch (projectsStore.get(id)) {
+    let existingProject = switch (projectsStoreV2.get(id)) {
       case (null) { Runtime.trap("Project not found") };
       case (?p) { p };
     };
 
-    let projectWithId = { updatedProject with id; createdAt = existingProject.createdAt };
-    projectsStore.add(id, projectWithId);
+    let projectWithId = { updatedProject with id; createdAt = existingProject.createdAt; updatedAt = Time.now() };
+    projectsStoreV2.add(id, projectWithId);
   };
 
   public shared ({ caller }) func deleteProject(id : Nat) : async () {
@@ -499,10 +522,10 @@ actor {
       Runtime.trap("Unauthorized: Only admins can delete projects");
     };
 
-    switch (projectsStore.get(id)) {
+    switch (projectsStoreV2.get(id)) {
       case (null) { Runtime.trap("Project not found") };
       case (?_) {
-        projectsStore.remove(id);
+        projectsStoreV2.remove(id);
       };
     };
   };
@@ -841,7 +864,7 @@ actor {
     };
     requireApprovedUser(caller);
 
-    let allProjects = projectsStore.values().toArray();
+    let allProjects = projectsStoreV2.values().toArray();
 
     let planningCount = allProjects.filter(func(p) { p.status == #planning }).size();
     let activeCount = allProjects.filter(func(p) { p.status == #active }).size();
@@ -911,7 +934,7 @@ actor {
     };
     requireApprovedUser(caller);
 
-    let project = switch (projectsStore.get(projectId)) {
+    let project = switch (projectsStoreV2.get(projectId)) {
       case (null) { Runtime.trap("Project not found") };
       case (?p) { p };
     };
@@ -954,7 +977,7 @@ actor {
     };
     requireApprovedUser(caller);
 
-    projectsStore.map<Nat, Project, ProjectCostSummary>(
+    projectsStoreV2.map<Nat, Project, ProjectCostSummary>(
       func(_id, project) {
         let materialsCost = materials.values().toArray().filter(
           func(m) { m.projectId == project.id }
@@ -1041,13 +1064,13 @@ actor {
     };
   };
 
-  /// --- Legacy Pre-v19 Project Migration (no clientName, no createdAt) ---
+  /// --- Migration: pre-v19 (ProjectLegacy) and v19-v28 (ProjectV1 without updatedAt) -> Project (with updatedAt) ---
   system func postupgrade() {
-    // Migrate legacy projects (pre-v19, missing clientName/createdAt) into projectsStore
+    // Step 1: Migrate very old pre-v19 projects (ProjectLegacy) -> projectsStoreV2
     for (old in projects.values()) {
-      switch (projectsStore.get(old.id)) {
+      switch (projectsStoreV2.get(old.id)) {
         case null {
-          projectsStore.add(old.id, {
+          projectsStoreV2.add(old.id, {
             id = old.id;
             name = old.name;
             clientName = "";
@@ -1061,9 +1084,37 @@ actor {
             estimatedDurationDays = old.estimatedDurationDays;
             currentProgressPercentage = old.currentProgressPercentage;
             createdAt = 0;
+            updatedAt = 0;
           });
           if (old.id >= nextProjectId) {
             nextProjectId := old.id + 1;
+          };
+        };
+        case _ {};
+      };
+    };
+    // Step 2: Migrate v19-v28 projects (ProjectV1, no updatedAt) -> projectsStoreV2
+    for (v1 in projectsStore.values()) {
+      switch (projectsStoreV2.get(v1.id)) {
+        case null {
+          projectsStoreV2.add(v1.id, {
+            id = v1.id;
+            name = v1.name;
+            clientName = v1.clientName;
+            description = v1.description;
+            location = v1.location;
+            startDate = v1.startDate;
+            endDate = v1.endDate;
+            status = v1.status;
+            budget = v1.budget;
+            stage = v1.stage;
+            estimatedDurationDays = v1.estimatedDurationDays;
+            currentProgressPercentage = v1.currentProgressPercentage;
+            createdAt = v1.createdAt;
+            updatedAt = v1.createdAt; // use createdAt as initial updatedAt
+          });
+          if (v1.id >= nextProjectId) {
+            nextProjectId := v1.id + 1;
           };
         };
         case _ {};

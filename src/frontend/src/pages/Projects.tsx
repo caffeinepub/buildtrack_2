@@ -465,6 +465,16 @@ function EditProjectDialog({ project }: { project: Project }) {
   );
 }
 
+// ── Last Modified Helper ─────────────────────────────────────────────────────
+function formatLastModified(ns: bigint): string {
+  const ms = Number(ns) / 1_000_000;
+  return new Date(ms).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function Projects() {
   const { actor } = useActor();
   const { canWrite, login } = useAuth();
@@ -650,6 +660,15 @@ export default function Projects() {
                           {project.estimatedDurationDays}d timeline
                         </div>
                       )}
+                      <div className="text-xs text-muted-foreground/70 mt-2 border-t border-border/40 pt-2">
+                        Modified:{" "}
+                        {formatLastModified(
+                          (project as any).updatedAt &&
+                            (project as any).updatedAt > 0n
+                            ? (project as any).updatedAt
+                            : project.createdAt,
+                        )}
+                      </div>
                     </CardContent>
                   </Card>
                 </Link>

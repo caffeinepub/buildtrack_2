@@ -252,6 +252,17 @@ export default function ProjectDetail() {
               ) : null;
             })()}
           </div>
+          <p className="text-xs text-muted-foreground mt-1.5 flex items-center gap-1">
+            <span>Last modified:</span>
+            <span>
+              {formatLastModified(
+                (project as any).updatedAt && (project as any).updatedAt > 0n
+                  ? (project as any).updatedAt
+                  : project.createdAt,
+                true,
+              )}
+            </span>
+          </p>
         </div>
         {canWrite && (
           <div className="flex gap-2">
@@ -603,6 +614,21 @@ export default function ProjectDetail() {
       </Tabs>
     </div>
   );
+}
+
+// ── Last Modified Helper ─────────────────────────────────────────────────────
+
+function formatLastModified(ns: bigint, includeTime = false): string {
+  const ms = Number(ns) / 1_000_000;
+  const date = new Date(ms);
+  if (includeTime) {
+    return `${date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} at ${date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 // ── Edit Project ─────────────────────────────────────────────────────────────

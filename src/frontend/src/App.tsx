@@ -116,7 +116,7 @@ function Nav({ onClose }: { onClose?: () => void }) {
           <FolderKanban className="w-4 h-4" />
           Projects
         </Link>
-        {isAdmin && (
+        {identity && (
           <Link
             to="/users"
             data-ocid="nav.users.link"
@@ -132,7 +132,7 @@ function Nav({ onClose }: { onClose?: () => void }) {
           >
             <Shield className="w-4 h-4" />
             <span className="flex-1">Users</span>
-            {pendingCount > 0 && (
+            {isAdmin && pendingCount > 0 && (
               <span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
                 {pendingCount}
               </span>
