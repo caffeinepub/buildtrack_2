@@ -39,7 +39,9 @@ import {
   Clock,
   Cloud,
   DollarSign,
+  FileText,
   Image,
+  Loader2,
   MapPin,
   Maximize2,
   Pencil,
@@ -49,7 +51,6 @@ import {
   Upload,
   Users,
 } from "lucide-react";
-import { FileText } from "lucide-react";
 import { useRef, useState } from "react";
 import {
   Bar,
@@ -705,7 +706,9 @@ function EditProjectDialog({
       toast.success("Project updated successfully");
     },
     onError: () => {
-      toast.error("Failed to update project. Please try again.");
+      toast.error(
+        "Failed to update project. Your changes have been preserved.",
+      );
     },
   });
 
@@ -975,6 +978,9 @@ function EditProjectDialog({
               onClick={handleSave}
               disabled={mutation.isPending}
             >
+              {mutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {mutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
@@ -1080,6 +1086,9 @@ function StagePanel({
                 }
                 onClick={() => stageMutation.mutate(selectedStage)}
               >
+                {stageMutation.isPending && (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                )}
                 {stageMutation.isPending ? "Saving..." : "Save Stage"}
               </Button>
             </div>
@@ -1120,7 +1129,8 @@ function ReportsTab({
       resetForm();
       toast.success("Report added");
     },
-    onError: () => toast.error("Failed to add report"),
+    onError: () =>
+      toast.error("Failed to add report. Your data has been preserved."),
   });
 
   const updateMutation = useMutation({
@@ -1382,6 +1392,7 @@ function ReportsTab({
               onClick={handleSubmit}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -1423,7 +1434,8 @@ function MaterialsTab({
       resetForm();
       toast.success("Material added");
     },
-    onError: () => toast.error("Failed to add material"),
+    onError: () =>
+      toast.error("Failed to add material. Your data has been preserved."),
   });
 
   const updateMutation = useMutation({
@@ -1677,6 +1689,7 @@ function MaterialsTab({
               onClick={handleSubmit}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -1721,7 +1734,8 @@ function LabourTab({ projectId }: { projectId: bigint }) {
       resetForm();
       toast.success("Labour record added");
     },
-    onError: () => toast.error("Failed to add labour record"),
+    onError: () =>
+      toast.error("Failed to add labour record. Your data has been preserved."),
   });
 
   const updateMutation = useMutation({
@@ -1965,6 +1979,7 @@ function LabourTab({ projectId }: { projectId: bigint }) {
               onClick={handleSubmit}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -2050,7 +2065,8 @@ function BOQTab({
       resetForm();
       toast.success("BOQ item added");
     },
-    onError: () => toast.error("Failed to add BOQ item"),
+    onError: () =>
+      toast.error("Failed to add BOQ item. Your data has been preserved."),
   });
 
   const updateMutation = useMutation({
@@ -2320,6 +2336,7 @@ function BOQTab({
               className="border-blue-700 text-blue-700 hover:bg-blue-50"
             >
               <Upload className="w-4 h-4 mr-1" />
+              {isUploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isUploading ? "Uploading..." : "Upload BOQ File"}
             </Button>
             <Button
@@ -2729,6 +2746,7 @@ function BOQTab({
               onClick={handleSubmit}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -3079,7 +3097,8 @@ function BudgetTab({
       resetForm();
       toast.success("Cost added");
     },
-    onError: () => toast.error("Failed to add cost"),
+    onError: () =>
+      toast.error("Failed to add cost. Your data has been preserved."),
   });
 
   const updateMutation = useMutation({
@@ -3365,6 +3384,7 @@ function BudgetTab({
               onClick={handleSubmit}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {isPending ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -3888,6 +3908,9 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
               disabled={!uploadFile || addMutation.isPending}
               className="bg-[#1a3a6e] hover:bg-[#0a1628] text-white"
             >
+              {addMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {addMutation.isPending ? "Uploading..." : "Upload Photo"}
             </Button>
           </DialogFooter>

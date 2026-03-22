@@ -19,8 +19,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Calendar, MapPin, Pencil, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { Calendar, Loader2, MapPin, Pencil, Plus, Search } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { type Project, ProjectStage, ProjectStatus } from "../backend";
 import { useAuth } from "../contexts/AuthContext";
@@ -178,11 +178,12 @@ function EditProjectDialog({ project }: { project: Project }) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project", project.id.toString()] });
       setOpen(false);
       toast.success("Project updated successfully");
     },
     onError: () => {
-      toast.error("Failed to update project. Please try again.");
+      toast.error("Failed to update project. Your data has been preserved.");
     },
   });
 
@@ -456,6 +457,9 @@ function EditProjectDialog({ project }: { project: Project }) {
               onClick={handleSave}
               disabled={mutation.isPending}
             >
+              {mutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {mutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
@@ -481,9 +485,28 @@ export default function Projects() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<ProjectForm>(emptyForm());
+  const LS_KEY = "mbcl_create_project_draft";
+  const [form, setForm] = useState<ProjectForm>(() => {
+    try {
+      const saved = localStorage.getItem("mbcl_create_project_draft");
+      if (saved) return { ...emptyForm(), ...JSON.parse(saved) };
+    } catch {}
+    return emptyForm();
+  });
   type FormErrors = Record<string, string>;
   const [errors, setErrors] = useState<FormErrors>({});
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-save form to localStorage (debounced 500ms)
+  useEffect(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      localStorage.setItem(LS_KEY, JSON.stringify(form));
+    }, 500);
+    return () => {
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    };
+  }, [form]);
 
   const { data: allProjectsData } = useQuery({
     queryKey: ["projects"],
@@ -507,9 +530,11 @@ export default function Projects() {
       setShowCreate(false);
       setForm(emptyForm());
       setErrors({});
-      toast.success("Project created");
+      localStorage.removeItem("mbcl_create_project_draft");
+      toast.success("Project created successfully");
     },
-    onError: () => toast.error("Failed to create project"),
+    onError: () =>
+      toast.error("Failed to create project. Your data has been preserved."),
   });
 
   function handleSubmit() {
@@ -890,7 +915,11 @@ export default function Projects() {
             <Button
               variant="outline"
               data-ocid="project.cancel_button"
-              onClick={() => setShowCreate(false)}
+              onClick={() => {
+                setShowCreate(false);
+                setForm(emptyForm());
+                localStorage.removeItem("mbcl_create_project_draft");
+              }}
             >
               Cancel
             </Button>
@@ -899,6 +928,9 @@ export default function Projects() {
               onClick={handleSubmit}
               disabled={createMutation.isPending}
             >
+              {createMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
               {createMutation.isPending ? "Creating..." : "Create Project"}
             </Button>
           </DialogFooter>

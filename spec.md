@@ -1,30 +1,19 @@
 # BuildTrack
 
 ## Current State
-The app has all Users Panel features implemented:
-- UserManagementPage with Approval Queue, All Users, Active Users, and Roles tabs
-- Active Users tab with pulsing green dots and auto-refresh
-- Sidebar red pending count badge (admin only) with 60s auto-refresh
-- Dashboard amber alert banner when users are pending approval
-- Non-admin users see their own profile
+All forms use button `onClick` handlers (not `<form onSubmit>`), so no traditional form submissions occur. All mutations use React Query with `isPending` loading states, disabled buttons during processing, and toast success/error messages. No `window.location.reload()` calls exist.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nothing new to add -- all features exist
+- Nothing new needed -- async handling is already in place
 
 ### Modify
-- Verify Users Panel tabs are correct: Approval Queue (red badge), All Users (status badges + actions), Active Users (pulsing green dots, auto-refresh 30s, green count badge), Roles tab
-- Verify sidebar red pending count badge on Users link (admin only, auto-refresh 60s)
-- Verify dashboard amber alert banner for pending approvals
-- Ensure the app is stable and builds cleanly with no TypeScript errors
+- Verify all form dialogs have `e.preventDefault()` on any wrapping form elements (none found -- all use button onClick)
+- Ensure dialog close only happens in `onSuccess` callback, never before async completes
 
 ### Remove
-- Nothing to remove
+- Nothing
 
 ## Implementation Plan
-1. Audit UserManagementPage: confirm all 4 tabs work correctly, Active Users tab has green count badge and pulsing dots
-2. Audit Sidebar Nav: confirm red badge is admin-only, auto-refreshes every 60s
-3. Audit Dashboard: confirm amber alert banner shows pending count
-4. Fix any TypeScript/lint errors found
-5. Validate and build
+Confirm the existing implementation is correct and redeploy. All save actions are already async with loading indicators and no page reloads.
