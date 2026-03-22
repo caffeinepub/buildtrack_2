@@ -156,6 +156,7 @@ export default function ProjectDetail() {
   const { actor } = useActor();
   const { canWrite } = useAuth();
   const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState("overview");
 
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", id],
@@ -383,7 +384,7 @@ export default function ProjectDetail() {
           return null;
         })()}
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 mb-6">
           <TabsList className="whitespace-nowrap">
             <TabsTrigger value="overview" data-ocid="project.overview.tab">
@@ -717,6 +718,8 @@ function EditProjectDialog({
   }
 
   function handleOpenChange(val: boolean) {
+    // Block close while mutation is in progress
+    if (mutation.isPending) return;
     setOpen(val);
     if (!val) setErrors({});
   }
@@ -769,7 +772,11 @@ function EditProjectDialog({
         <Pencil className="w-4 h-4 mr-1" /> Edit Project
       </Button>
       <Dialog open={open} onOpenChange={handleOpenChange}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-lg max-h-[90vh] overflow-y-auto"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">Edit Project</DialogTitle>
           </DialogHeader>
@@ -1111,13 +1118,14 @@ function ReportsTab({
   const [showAdd, setShowAdd] = useState(false);
   const [editReport, setEditReport] = useState<DailySiteReport | null>(null);
   const [form, setForm] = useState({
-    date: "",
+    date: new Date().toISOString().split("T")[0],
     weather: "",
     workersOnSite: "",
     hoursWorked: "",
     activities: "",
     notes: "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const sorted = [...reports].sort((a, b) => Number(b.date - a.date));
 
@@ -1152,13 +1160,14 @@ function ReportsTab({
 
   function resetForm() {
     setForm({
-      date: "",
+      date: new Date().toISOString().split("T")[0],
       weather: "",
       workersOnSite: "",
       hoursWorked: "",
       activities: "",
       notes: "",
     });
+    setErrors({});
   }
 
   function openEdit(r: DailySiteReport) {
@@ -1174,6 +1183,14 @@ function ReportsTab({
   }
 
   function handleSubmit() {
+    const errs: Record<string, string> = {};
+    if (!form.date) errs.date = "Date is required";
+    if (!form.activities.trim()) errs.activities = "Work Done is required";
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    setErrors({});
     const payload: DailySiteReport = {
       id: editReport ? editReport.id : 0n,
       projectId,
@@ -1294,7 +1311,10 @@ function ReportsTab({
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">
               {editReport ? "Edit Report" : "Add Daily Report"}
@@ -1308,10 +1328,15 @@ function ReportsTab({
                   data-ocid="report.date.input"
                   type="date"
                   value={form.date}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, date: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, date: e.target.value }));
+                    setErrors((e2) => ({ ...e2, date: "" }));
+                  }}
+                  className={errors.date ? "border-destructive" : ""}
                 />
+                {errors.date && (
+                  <p className="text-xs text-destructive mt-1">{errors.date}</p>
+                )}
               </div>
               <div>
                 <Label>Weather</Label>
@@ -1352,16 +1377,23 @@ function ReportsTab({
               </div>
             </div>
             <div>
-              <Label>Activities</Label>
+              <Label>Work Done</Label>
               <Textarea
                 data-ocid="report.activities.textarea"
                 value={form.activities}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, activities: e.target.value }))
-                }
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, activities: e.target.value }));
+                  setErrors((e2) => ({ ...e2, activities: "" }));
+                }}
                 rows={2}
                 placeholder="What was done today..."
+                className={errors.activities ? "border-destructive" : ""}
               />
+              {errors.activities && (
+                <p className="text-xs text-destructive mt-1">
+                  {errors.activities}
+                </p>
+              )}
             </div>
             <div>
               <Label>Notes</Label>
@@ -1420,6 +1452,7 @@ function MaterialsTab({
     unitCost: "",
     supplier: "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const createMutation = useMutation({
     mutationFn: (m: Material) => actor!.addMaterial(m),
@@ -1467,6 +1500,7 @@ function MaterialsTab({
 
   function resetForm() {
     setForm({ name: "", unit: "", quantity: "", unitCost: "", supplier: "" });
+    setErrors({});
   }
   function openEdit(m: Material) {
     setForm({
@@ -1480,6 +1514,17 @@ function MaterialsTab({
   }
 
   function handleSubmit() {
+    const errs: Record<string, string> = {};
+    if (!form.name.trim()) errs.name = "Material name is required";
+    if (!form.quantity || Number.parseFloat(form.quantity) <= 0)
+      errs.quantity = "Quantity must be greater than 0";
+    if (!form.unitCost || Number.parseFloat(form.unitCost) <= 0)
+      errs.unitCost = "Unit cost must be greater than 0";
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    setErrors({});
     const payload: Material = {
       id: editMaterial ? editMaterial.id : 0n,
       projectId,
@@ -1604,7 +1649,10 @@ function MaterialsTab({
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">
               {editMaterial ? "Edit Material" : "Add Material"}
@@ -1616,11 +1664,16 @@ function MaterialsTab({
               <Input
                 data-ocid="material.name.input"
                 value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, name: e.target.value }))
-                }
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, name: e.target.value }));
+                  setErrors((e2) => ({ ...e2, name: "" }));
+                }}
                 placeholder="e.g. Ready-mix Concrete"
+                className={errors.name ? "border-destructive" : ""}
               />
+              {errors.name && (
+                <p className="text-xs text-destructive mt-1">{errors.name}</p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1640,11 +1693,18 @@ function MaterialsTab({
                   data-ocid="material.quantity.input"
                   type="number"
                   value={form.quantity}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, quantity: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, quantity: e.target.value }));
+                    setErrors((e2) => ({ ...e2, quantity: "" }));
+                  }}
                   placeholder="0"
+                  className={errors.quantity ? "border-destructive" : ""}
                 />
+                {errors.quantity && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.quantity}
+                  </p>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -1654,11 +1714,18 @@ function MaterialsTab({
                   data-ocid="material.unitcost.input"
                   type="number"
                   value={form.unitCost}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, unitCost: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, unitCost: e.target.value }));
+                    setErrors((e2) => ({ ...e2, unitCost: "" }));
+                  }}
                   placeholder="0"
+                  className={errors.unitCost ? "border-destructive" : ""}
                 />
+                {errors.unitCost && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.unitCost}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Supplier</Label>
@@ -1713,6 +1780,7 @@ function LabourTab({ projectId }: { projectId: bigint }) {
     dailyWage: "",
     daysWorked: "",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const { data: labourList = [] } = useQuery({
     queryKey: ["labour", projectId.toString()],
@@ -1769,6 +1837,7 @@ function LabourTab({ projectId }: { projectId: bigint }) {
 
   function resetForm() {
     setForm({ workerName: "", role: "", dailyWage: "", daysWorked: "" });
+    setErrors({});
   }
 
   function openEdit(l: Labour) {
@@ -1782,6 +1851,15 @@ function LabourTab({ projectId }: { projectId: bigint }) {
   }
 
   function handleSubmit() {
+    const errs: Record<string, string> = {};
+    if (!form.workerName.trim()) errs.workerName = "Worker name is required";
+    if (!form.dailyWage || Number.parseFloat(form.dailyWage) <= 0)
+      errs.dailyWage = "Daily wage must be greater than 0";
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    setErrors({});
     const payload: Labour = {
       id: editLabour ? editLabour.id : 0n,
       projectId,
@@ -1905,7 +1983,10 @@ function LabourTab({ projectId }: { projectId: bigint }) {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">
               {editLabour ? "Edit Labour Record" : "Add Labour Record"}
@@ -1918,11 +1999,18 @@ function LabourTab({ projectId }: { projectId: bigint }) {
                 <Input
                   data-ocid="labour.name.input"
                   value={form.workerName}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, workerName: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, workerName: e.target.value }));
+                    setErrors((e2) => ({ ...e2, workerName: "" }));
+                  }}
                   placeholder="e.g. John Doe"
+                  className={errors.workerName ? "border-destructive" : ""}
                 />
+                {errors.workerName && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.workerName}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Role</Label>
@@ -1943,11 +2031,18 @@ function LabourTab({ projectId }: { projectId: bigint }) {
                   data-ocid="labour.wage.input"
                   type="number"
                   value={form.dailyWage}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, dailyWage: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, dailyWage: e.target.value }));
+                    setErrors((e2) => ({ ...e2, dailyWage: "" }));
+                  }}
                   placeholder="0"
+                  className={errors.dailyWage ? "border-destructive" : ""}
                 />
+                {errors.dailyWage && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.dailyWage}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Days Worked</Label>
@@ -2029,6 +2124,7 @@ function BOQTab({
     unitRate: "",
     usedQuantity: "0",
   });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   // File upload state
   const [parsedRows, setParsedRows] = useState<string[][]>([]);
@@ -2103,6 +2199,7 @@ function BOQTab({
       unitRate: "",
       usedQuantity: "0",
     });
+    setErrors({});
   }
 
   function openEdit(item: BoqItem) {
@@ -2118,6 +2215,17 @@ function BOQTab({
   }
 
   function handleSubmit() {
+    const errs: Record<string, string> = {};
+    if (!form.itemName.trim()) errs.itemName = "Item name is required";
+    if (!form.plannedQuantity || Number.parseFloat(form.plannedQuantity) <= 0)
+      errs.plannedQuantity = "Planned quantity must be greater than 0";
+    if (!form.unitRate || Number.parseFloat(form.unitRate) <= 0)
+      errs.unitRate = "Unit rate is required";
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    setErrors({});
     const payload: BoqItem = {
       id: editItem ? editItem.id : 0n,
       projectId,
@@ -2646,7 +2754,11 @@ function BOQTab({
           }
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">
               {editItem ? "Edit BOQ Item" : "Add BOQ Item"}
@@ -2659,11 +2771,18 @@ function BOQTab({
                 <Input
                   data-ocid="boq.name.input"
                   value={form.itemName}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, itemName: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, itemName: e.target.value }));
+                    setErrors((e2) => ({ ...e2, itemName: "" }));
+                  }}
                   placeholder="e.g. Cement"
+                  className={errors.itemName ? "border-destructive" : ""}
                 />
+                {errors.itemName && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.itemName}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Unit</Label>
@@ -2695,11 +2814,18 @@ function BOQTab({
                   data-ocid="boq.planned_qty.input"
                   type="number"
                   value={form.plannedQuantity}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, plannedQuantity: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, plannedQuantity: e.target.value }));
+                    setErrors((e2) => ({ ...e2, plannedQuantity: "" }));
+                  }}
                   placeholder="0"
+                  className={errors.plannedQuantity ? "border-destructive" : ""}
                 />
+                {errors.plannedQuantity && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.plannedQuantity}
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Unit Rate (Tsh)</Label>
@@ -2707,11 +2833,18 @@ function BOQTab({
                   data-ocid="boq.unit_rate.input"
                   type="number"
                   value={form.unitRate}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, unitRate: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setForm((f) => ({ ...f, unitRate: e.target.value }));
+                    setErrors((e2) => ({ ...e2, unitRate: "" }));
+                  }}
                   placeholder="0"
+                  className={errors.unitRate ? "border-destructive" : ""}
                 />
+                {errors.unitRate && (
+                  <p className="text-xs text-destructive mt-1">
+                    {errors.unitRate}
+                  </p>
+                )}
               </div>
             </div>
             <div>
@@ -2760,7 +2893,11 @@ function BOQTab({
           if (!v) setShowMappingDialog(false);
         }}
       >
-        <DialogContent className="max-w-2xl">
+        <DialogContent
+          className="max-w-2xl"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">
               Map Columns to BOQ Fields
@@ -3313,7 +3450,10 @@ function BudgetTab({
           }
         }}
       >
-        <DialogContent>
+        <DialogContent
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display">
               {editCost ? "Edit Cost" : "Add Cost Entry"}
@@ -3600,6 +3740,7 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
   );
   const [uploadDesc, setUploadDesc] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState("");
 
   const { data: photos, isLoading } = useQuery<ProjectPhoto[]>({
     queryKey: ["photos", projectId.toString()],
@@ -3806,8 +3947,18 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
       )}
 
       {/* Upload Dialog */}
-      <Dialog open={showUpload} onOpenChange={setShowUpload}>
-        <DialogContent data-ocid="photos.dialog">
+      <Dialog
+        open={showUpload}
+        onOpenChange={(v) => {
+          if (addMutation.isPending) return;
+          setShowUpload(v);
+        }}
+      >
+        <DialogContent
+          data-ocid="photos.dialog"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle className="font-display flex items-center gap-2">
               <Camera className="h-5 w-5 text-[#D4A017]" />
@@ -3851,9 +4002,15 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
                   accept="image/*"
                   className="hidden"
                   data-ocid="photos.upload_button"
-                  onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    setUploadFile(e.target.files?.[0] ?? null);
+                    setUploadError("");
+                  }}
                 />
               </label>
+              {uploadError && (
+                <p className="text-xs text-destructive mt-1">{uploadError}</p>
+              )}
             </div>
 
             <div>
@@ -3898,14 +4055,21 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
                 setUploadFile(null);
                 setUploadDesc("");
                 setUploadProgress(0);
+                setUploadError("");
               }}
             >
               Cancel
             </Button>
             <Button
               data-ocid="photos.submit_button"
-              onClick={() => addMutation.mutate()}
-              disabled={!uploadFile || addMutation.isPending}
+              onClick={() => {
+                if (!uploadFile) {
+                  setUploadError("Please select an image file");
+                  return;
+                }
+                addMutation.mutate();
+              }}
+              disabled={addMutation.isPending}
               className="bg-[#1a3a6e] hover:bg-[#0a1628] text-white"
             >
               {addMutation.isPending && (
@@ -3925,6 +4089,8 @@ function PhotoProgressTab({ projectId }: { projectId: bigint }) {
         }}
       >
         <DialogContent
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
           className="max-w-3xl p-0 overflow-hidden"
           data-ocid="photos.modal"
         >

@@ -20,9 +20,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Calendar, Loader2, MapPin, Pencil, Plus, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { type Project, ProjectStage, ProjectStatus } from "../backend";
+import { CreateProjectDialog } from "../components/CreateProjectDialog";
 import { useAuth } from "../contexts/AuthContext";
 import { useActor } from "../hooks/useActor";
 import {
@@ -68,49 +69,6 @@ const STAGE_COLORS: Record<ProjectStage, string> = {
   [ProjectStage.finishing]: "bg-purple-100 text-purple-700 border-purple-200",
   [ProjectStage.completed]: "bg-green-100 text-green-700 border-green-200",
 };
-
-type ProjectForm = {
-  name: string;
-  clientName: string;
-  description: string;
-  location: string;
-  status: ProjectStatus;
-  stage: ProjectStage;
-  budget: string;
-  startDate: string;
-  endDate: string;
-  estimatedDurationDays: string;
-  currentProgressPercentage: string;
-};
-
-const emptyForm = (): ProjectForm => ({
-  name: "",
-  clientName: "",
-  description: "",
-  location: "",
-  status: ProjectStatus.planning,
-  stage: ProjectStage.planning,
-  budget: "",
-  startDate: "",
-  endDate: "",
-  estimatedDurationDays: "",
-  currentProgressPercentage: "0",
-});
-
-const ALL_STATUSES = [
-  ProjectStatus.active,
-  ProjectStatus.planning,
-  ProjectStatus.completed,
-  ProjectStatus.onHold,
-];
-
-const ALL_STAGES = [
-  ProjectStage.planning,
-  ProjectStage.foundation,
-  ProjectStage.structure,
-  ProjectStage.finishing,
-  ProjectStage.completed,
-];
 
 // ── Edit Project Dialog ──────────────────────────────────────────────────────
 
@@ -192,6 +150,8 @@ function EditProjectDialog({ project }: { project: Project }) {
   }
 
   function handleOpenChange(val: boolean) {
+    // Block close while mutation is in progress
+    if (mutation.isPending) return;
     setOpen(val);
     if (!val) setErrors({});
   }
@@ -482,31 +442,8 @@ function formatLastModified(ns: bigint): string {
 export default function Projects() {
   const { actor } = useActor();
   const { canWrite, login } = useAuth();
-  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const LS_KEY = "mbcl_create_project_draft";
-  const [form, setForm] = useState<ProjectForm>(() => {
-    try {
-      const saved = localStorage.getItem("mbcl_create_project_draft");
-      if (saved) return { ...emptyForm(), ...JSON.parse(saved) };
-    } catch {}
-    return emptyForm();
-  });
-  type FormErrors = Record<string, string>;
-  const [errors, setErrors] = useState<FormErrors>({});
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Auto-save form to localStorage (debounced 500ms)
-  useEffect(() => {
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => {
-      localStorage.setItem(LS_KEY, JSON.stringify(form));
-    }, 500);
-    return () => {
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    };
-  }, [form]);
 
   const { data: allProjectsData } = useQuery({
     queryKey: ["projects"],
@@ -521,62 +458,6 @@ export default function Projects() {
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.location.toLowerCase().includes(search.toLowerCase()),
   );
-
-  const createMutation = useMutation({
-    mutationFn: (project: Project) => actor!.createProject(project),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["projects"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      setShowCreate(false);
-      setForm(emptyForm());
-      setErrors({});
-      localStorage.removeItem("mbcl_create_project_draft");
-      toast.success("Project created successfully");
-    },
-    onError: () =>
-      toast.error("Failed to create project. Your data has been preserved."),
-  });
-
-  function handleSubmit() {
-    const newErrors: FormErrors = {};
-    if (!form.name.trim()) newErrors.name = "Project name is required";
-    if (!form.clientName.trim())
-      newErrors.clientName = "Client name is required";
-    if (!form.location.trim()) newErrors.location = "Location is required";
-    const budgetNum = Number.parseFloat(form.budget);
-    if (!form.budget || Number.isNaN(budgetNum) || budgetNum <= 0)
-      newErrors.budget = "Contract value must be a positive number";
-    if (!form.startDate) newErrors.startDate = "Start date is required";
-    const durationNum = Number.parseFloat(form.estimatedDurationDays);
-    if (
-      !form.estimatedDurationDays ||
-      Number.isNaN(durationNum) ||
-      durationNum <= 0
-    )
-      newErrors.estimatedDurationDays = "Duration must be a positive number";
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors);
-      return;
-    }
-    setErrors({});
-    createMutation.mutate({
-      id: 0n,
-      name: form.name,
-      clientName: form.clientName,
-      description: form.description,
-      location: form.location,
-      status: form.status,
-      stage: form.stage,
-      budget: budgetNum,
-      startDate: form.startDate ? dateToNs(form.startDate) : nowNs(),
-      endDate: form.endDate ? dateToNs(form.endDate) : nowNs(),
-      estimatedDurationDays: durationNum,
-      currentProgressPercentage: form.currentProgressPercentage
-        ? Number.parseFloat(form.currentProgressPercentage)
-        : 0,
-      createdAt: nowNs(),
-    });
-  }
 
   return (
     <div data-ocid="projects.page" className="p-4 md:p-8">
@@ -707,235 +588,7 @@ export default function Projects() {
       )}
 
       {/* Create dialog */}
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent
-          data-ocid="project.dialog"
-          className="max-w-lg max-h-[90vh] overflow-y-auto"
-        >
-          <DialogHeader>
-            <DialogTitle className="font-display">New Project</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label htmlFor="proj-name">Project Name *</Label>
-              <Input
-                id="proj-name"
-                data-ocid="project.name.input"
-                value={form.name}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, name: e.target.value }))
-                }
-                placeholder="e.g. Downtown Office Tower"
-              />
-              {errors.name && (
-                <p className="text-xs text-red-500 mt-1">{errors.name}</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="proj-client">Client Name *</Label>
-              <Input
-                id="proj-client"
-                data-ocid="project.client.input"
-                value={form.clientName}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, clientName: e.target.value }))
-                }
-                placeholder="e.g. MBCL Ltd"
-              />
-              {errors.clientName && (
-                <p className="text-xs text-red-500 mt-1">{errors.clientName}</p>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="proj-desc">Description</Label>
-              <Textarea
-                id="proj-desc"
-                data-ocid="project.description.textarea"
-                value={form.description}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, description: e.target.value }))
-                }
-                rows={3}
-                placeholder="Brief project description..."
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="proj-loc">Location *</Label>
-                <Input
-                  id="proj-loc"
-                  data-ocid="project.location.input"
-                  value={form.location}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, location: e.target.value }))
-                  }
-                  placeholder="City, State"
-                />
-                {errors.location && (
-                  <p className="text-xs text-red-500 mt-1">{errors.location}</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="proj-budget">Contract Value (Tsh) *</Label>
-                <Input
-                  id="proj-budget"
-                  data-ocid="project.budget.input"
-                  type="number"
-                  value={form.budget}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, budget: e.target.value }))
-                  }
-                  placeholder="500000"
-                />
-                {errors.budget && (
-                  <p className="text-xs text-red-500 mt-1">{errors.budget}</p>
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Status</Label>
-                <Select
-                  value={form.status}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, status: v as ProjectStatus }))
-                  }
-                >
-                  <SelectTrigger data-ocid="project.status.select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ALL_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {STATUS_LABELS[s]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Construction Stage</Label>
-                <Select
-                  value={form.stage}
-                  onValueChange={(v) =>
-                    setForm((f) => ({ ...f, stage: v as ProjectStage }))
-                  }
-                >
-                  <SelectTrigger data-ocid="project.stage.select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ALL_STAGES.map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {STAGE_LABELS[s]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="proj-start">Start Date *</Label>
-                <Input
-                  id="proj-start"
-                  data-ocid="project.startdate.input"
-                  type="date"
-                  value={form.startDate}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, startDate: e.target.value }))
-                  }
-                />
-                {errors.startDate && (
-                  <p className="text-xs text-red-500 mt-1">
-                    {errors.startDate}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="proj-end">End Date</Label>
-                <Input
-                  id="proj-end"
-                  data-ocid="project.enddate.input"
-                  type="date"
-                  value={form.endDate}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, endDate: e.target.value }))
-                  }
-                />
-              </div>
-            </div>
-            {/* Timeline fields */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="proj-duration">
-                  Estimated Duration (days) *
-                </Label>
-                <Input
-                  id="proj-duration"
-                  data-ocid="project.duration.input"
-                  type="number"
-                  min="0"
-                  value={form.estimatedDurationDays}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      estimatedDurationDays: e.target.value,
-                    }))
-                  }
-                  placeholder="e.g. 180"
-                />
-                {errors.estimatedDurationDays && (
-                  <p className="text-xs text-red-500 mt-1">
-                    {errors.estimatedDurationDays}
-                  </p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="proj-progress">Progress (%)</Label>
-                <Input
-                  id="proj-progress"
-                  data-ocid="project.progress.input"
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={form.currentProgressPercentage}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      currentProgressPercentage: e.target.value,
-                    }))
-                  }
-                  placeholder="0"
-                />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              data-ocid="project.cancel_button"
-              onClick={() => {
-                setShowCreate(false);
-                setForm(emptyForm());
-                localStorage.removeItem("mbcl_create_project_draft");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              data-ocid="project.submit_button"
-              onClick={handleSubmit}
-              disabled={createMutation.isPending}
-            >
-              {createMutation.isPending && (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              )}
-              {createMutation.isPending ? "Creating..." : "Create Project"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateProjectDialog open={showCreate} onOpenChange={setShowCreate} />
     </div>
   );
 }

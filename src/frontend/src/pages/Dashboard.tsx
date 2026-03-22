@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   ChartContainer,
@@ -17,9 +18,11 @@ import {
   DollarSign,
   Layers,
   PauseCircle,
+  Plus,
   Timer,
   TrendingUp,
 } from "lucide-react";
+import { useState } from "react";
 import {
   Bar,
   BarChart,
@@ -41,6 +44,8 @@ import {
   TIMELINE_STATUS_LABELS,
   getTimelineStatus,
 } from "../lib/timelineUtils";
+
+import { CreateProjectDialog } from "../components/CreateProjectDialog";
 
 const _STATUS_COLORS = {
   Active: "var(--color-active)",
@@ -88,6 +93,7 @@ const STAGE_ACCENT_COLORS: Record<ProjectStage, string> = {
 export default function Dashboard() {
   const { actor } = useActor();
   const { isAdmin } = useAuth();
+  const [showCreate, setShowCreate] = useState(false);
 
   const { data: approvals } = useQuery({
     queryKey: ["approvals"],
@@ -251,13 +257,21 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-700 text-foreground">
-          Dashboard
-        </h1>
-        <p className="text-muted-foreground mt-1">
-          Overview of all your construction projects
-        </p>
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-700 text-foreground">
+            Dashboard
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Overview of all your construction projects
+          </p>
+        </div>
+        <Button
+          data-ocid="dashboard.new_project.button"
+          onClick={() => setShowCreate(true)}
+        >
+          <Plus className="w-4 h-4 mr-2" /> New Project
+        </Button>
       </div>
 
       {/* Stats */}
@@ -764,6 +778,7 @@ export default function Dashboard() {
           </>
         )}
       </div>
+      <CreateProjectDialog open={showCreate} onOpenChange={setShowCreate} />
     </div>
   );
 }

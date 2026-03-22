@@ -18,6 +18,7 @@ import {
   User,
   X,
 } from "lucide-react";
+import React from "react";
 import { useState } from "react";
 import { ApprovalStatus } from "./backend";
 import SplashScreen from "./components/SplashScreen";
@@ -30,6 +31,59 @@ import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import SetupPage from "./pages/SetupPage";
 import UserManagementPage from "./pages/UserManagementPage";
+
+// ─── Global Error Boundary ───────────────────────────────────────────────────
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("BuildTrack app error:", error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background">
+          <div className="text-center p-8 max-w-md">
+            <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">⚠️</span>
+            </div>
+            <h2 className="text-xl font-bold text-foreground mb-2">
+              Something went wrong
+            </h2>
+            <p className="text-muted-foreground mb-4 text-sm">
+              {this.state.error?.message ?? "An unexpected error occurred."}
+            </p>
+            <p className="text-muted-foreground mb-6 text-sm">
+              Please refresh the page to continue.
+            </p>
+            <Button
+              onClick={() =>
+                this.setState({ hasError: false, error: undefined })
+              }
+            >
+              Try Again
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─── Role Badges ─────────────────────────────────────────────────────────────
 
 const ROLE_BADGE: Record<string, { label: string; className: string }> = {
   admin: {
@@ -352,9 +406,9 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
 
   return (
-    <>
+    <ErrorBoundary>
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
       {!showSplash && <RouterProvider router={router} />}
-    </>
+    </ErrorBoundary>
   );
 }

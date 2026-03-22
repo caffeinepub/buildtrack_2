@@ -160,6 +160,10 @@ function AdminView() {
     }) => {
       if (!actor) throw new Error("Not connected");
       await actor.setApproval(principal, status);
+      // Also assign the #user role in access control when approving
+      if (status === ApprovalStatus.approved) {
+        await actor.assignCallerUserRole(principal, UserRole.user);
+      }
     },
     onSuccess: (_, { status }) => {
       const label =
