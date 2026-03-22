@@ -20,38 +20,38 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { type Project, ProjectStage, ProjectStatus } from "../backend";
+import { ProjectStage, ProjectStatus } from "../backend";
 import { useActor } from "../hooks/useActor";
 import { dateToNs, nowNs } from "../lib/appUtils";
 
 const LS_KEY = "mbcl_create_project_draft";
 
 type ProjectForm = {
-  name: string;
-  clientName: string;
+  project_name: string;
+  client_name: string;
   description: string;
   location: string;
   status: ProjectStatus;
   stage: ProjectStage;
-  budget: string;
-  startDate: string;
-  endDate: string;
-  estimatedDurationDays: string;
-  currentProgressPercentage: string;
+  contract_value: string;
+  start_date: string;
+  end_date: string;
+  estimated_duration_days: string;
+  current_progress: string;
 };
 
 const emptyForm = (): ProjectForm => ({
-  name: "",
-  clientName: "",
+  project_name: "",
+  client_name: "",
   description: "",
   location: "",
   status: ProjectStatus.planning,
   stage: ProjectStage.planning,
-  budget: "",
-  startDate: "",
-  endDate: "",
-  estimatedDurationDays: "",
-  currentProgressPercentage: "0",
+  contract_value: "",
+  start_date: "",
+  end_date: "",
+  estimated_duration_days: "",
+  current_progress: "0",
 });
 
 const ALL_STATUSES = [
@@ -92,6 +92,21 @@ interface CreateProjectDialogProps {
   onCreated?: () => void;
 }
 
+function extractErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const e = err as Record<string, unknown>;
+    if (typeof e.message === "string") return e.message;
+    if (typeof e.toString === "function") {
+      const str = e.toString();
+      if (str !== "[object Object]") return str;
+    }
+    return JSON.stringify(err);
+  }
+  return String(err);
+}
+
 export function CreateProjectDialog({
   open,
   onOpenChange,
@@ -102,7 +117,6 @@ export function CreateProjectDialog({
 
   const [form, setForm] = useState<ProjectForm>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
-  // Track submission separately to block dialog close during async operation
   const [isSubmitting, setIsSubmitting] = useState(false);
   const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -130,32 +144,38 @@ export function CreateProjectDialog({
     };
   }, [form, open]);
 
-  // Safe dialog close handler — never closes while submitting
+  // Only allow opening via this handler.
+  // Closing is EXCLUSIVELY handled by handleCancel() and successful submit.
   const handleOpenChange = useCallback(
     (val: boolean) => {
-      if (isSubmitting) return; // block close during async submit
-      onOpenChange(val);
+      if (val) onOpenChange(val);
+      // Ignore val=false entirely — prevents ALL auto-close triggers from Dialog
     },
-    [isSubmitting, onOpenChange],
+    [onOpenChange],
   );
 
   const handleSubmit = useCallback(async () => {
     const newErrors: FormErrors = {};
-    if (!form.name.trim()) newErrors.name = "Project name is required";
-    if (!form.clientName.trim())
-      newErrors.clientName = "Client name is required";
+    if (!form.project_name.trim())
+      newErrors.project_name = "Project name is required";
+    if (!form.client_name.trim())
+      newErrors.client_name = "Client name is required";
     if (!form.location.trim()) newErrors.location = "Location is required";
-    const budgetNum = Number.parseFloat(form.budget);
-    if (!form.budget || Number.isNaN(budgetNum) || budgetNum <= 0)
-      newErrors.budget = "Contract value must be a positive number";
-    if (!form.startDate) newErrors.startDate = "Start date is required";
-    const durationNum = Number.parseFloat(form.estimatedDurationDays);
+    const contractValueNum = Number.parseFloat(form.contract_value);
     if (
-      !form.estimatedDurationDays ||
+      !form.contract_value ||
+      Number.isNaN(contractValueNum) ||
+      contractValueNum <= 0
+    )
+      newErrors.contract_value = "Contract value must be a positive number";
+    if (!form.start_date) newErrors.start_date = "Start date is required";
+    const durationNum = Number.parseFloat(form.estimated_duration_days);
+    if (
+      !form.estimated_duration_days ||
       Number.isNaN(durationNum) ||
       durationNum <= 0
     )
-      newErrors.estimatedDurationDays = "Duration must be a positive number";
+      newErrors.estimated_duration_days = "Duration must be a positive number";
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -163,33 +183,47 @@ export function CreateProjectDialog({
     setErrors({});
 
     if (!actor) {
-      toast.error("Not connected. Please wait and try again.");
+      toast.error("Not connected to backend. Please refresh and try again.");
       return;
     }
 
+    const projectData = {
+      id: 0n,
+      name: form.project_name.trim(),
+      clientName: form.client_name.trim(),
+      description: form.description.trim(),
+      location: form.location.trim(),
+      status: form.status,
+      stage: form.stage,
+      budget: contractValueNum,
+      startDate: form.start_date ? dateToNs(form.start_date) : nowNs(),
+      endDate: form.end_date ? dateToNs(form.end_date) : nowNs(),
+      estimatedDurationDays: durationNum,
+      currentProgressPercentage: form.current_progress
+        ? Number.parseFloat(form.current_progress)
+        : 0,
+      createdAt: nowNs(),
+      updatedAt: nowNs(),
+    };
+
+    console.log("[CreateProject] Submitting project data:", {
+      project_name: projectData.name,
+      client_name: projectData.clientName,
+      location: projectData.location,
+      contract_value: projectData.budget,
+      start_date: form.start_date,
+      end_date: form.end_date,
+    });
+
     setIsSubmitting(true);
     try {
-      await actor.createProject({
-        id: 0n,
-        name: form.name.trim(),
-        clientName: form.clientName.trim(),
-        description: form.description,
-        location: form.location.trim(),
-        status: form.status,
-        stage: form.stage,
-        budget: budgetNum,
-        startDate: form.startDate ? dateToNs(form.startDate) : nowNs(),
-        endDate: form.endDate ? dateToNs(form.endDate) : nowNs(),
-        estimatedDurationDays: durationNum,
-        currentProgressPercentage: form.currentProgressPercentage
-          ? Number.parseFloat(form.currentProgressPercentage)
-          : 0,
-        createdAt: nowNs(),
-        updatedAt: nowNs(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newId = await actor.createProject(projectData as any);
+      console.log(
+        "[CreateProject] Data inserted successfully, project id:",
+        newId,
+      );
 
-      // SUCCESS: invalidate queries, close dialog, reset form
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["projects"] }),
         qc.invalidateQueries({ queryKey: ["dashboard-stats"] }),
@@ -201,10 +235,10 @@ export function CreateProjectDialog({
       onOpenChange(false);
       onCreated?.();
     } catch (err) {
-      console.error("Failed to create project:", err);
-      // ERROR: show message, keep dialog open, preserve form data
-      toast.error("Failed to create project. Your data has been preserved.");
-      // Do NOT close dialog or reset form
+      const errMsg = extractErrorMessage(err);
+      console.error("[CreateProject] Error:", errMsg, err);
+      toast.error(`Failed to save project: ${errMsg}`);
+      // Keep dialog open, preserve form data
     } finally {
       setIsSubmitting(false);
     }
@@ -226,44 +260,48 @@ export function CreateProjectDialog({
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => {
-          if (isSubmitting) e.preventDefault();
-          else handleCancel();
+          e.preventDefault(); // Always block Escape key — user must use Cancel button
         }}
       >
         <DialogHeader>
           <DialogTitle className="font-display">New Project</DialogTitle>
         </DialogHeader>
         <div className="space-y-4 py-2">
+          {/* project_name */}
           <div>
             <Label htmlFor="cpd-name">Project Name *</Label>
             <Input
               id="cpd-name"
               data-ocid="project.name.input"
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              value={form.project_name}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, project_name: e.target.value }))
+              }
               placeholder="e.g. Downtown Office Tower"
               disabled={isSubmitting}
             />
-            {errors.name && (
-              <p className="text-xs text-red-500 mt-1">{errors.name}</p>
+            {errors.project_name && (
+              <p className="text-xs text-red-500 mt-1">{errors.project_name}</p>
             )}
           </div>
+          {/* client_name */}
           <div>
             <Label htmlFor="cpd-client">Client Name *</Label>
             <Input
               id="cpd-client"
               data-ocid="project.client.input"
-              value={form.clientName}
+              value={form.client_name}
               onChange={(e) =>
-                setForm((f) => ({ ...f, clientName: e.target.value }))
+                setForm((f) => ({ ...f, client_name: e.target.value }))
               }
               placeholder="e.g. MBCL Ltd"
               disabled={isSubmitting}
             />
-            {errors.clientName && (
-              <p className="text-xs text-red-500 mt-1">{errors.clientName}</p>
+            {errors.client_name && (
+              <p className="text-xs text-red-500 mt-1">{errors.client_name}</p>
             )}
           </div>
+          {/* description */}
           <div>
             <Label htmlFor="cpd-desc">Description</Label>
             <Textarea
@@ -279,6 +317,7 @@ export function CreateProjectDialog({
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
+            {/* location */}
             <div>
               <Label htmlFor="cpd-loc">Location *</Label>
               <Input
@@ -288,28 +327,31 @@ export function CreateProjectDialog({
                 onChange={(e) =>
                   setForm((f) => ({ ...f, location: e.target.value }))
                 }
-                placeholder="City, State"
+                placeholder="City, Site"
                 disabled={isSubmitting}
               />
               {errors.location && (
                 <p className="text-xs text-red-500 mt-1">{errors.location}</p>
               )}
             </div>
+            {/* contract_value */}
             <div>
               <Label htmlFor="cpd-budget">Contract Value (Tsh) *</Label>
               <Input
                 id="cpd-budget"
                 data-ocid="project.budget.input"
                 type="number"
-                value={form.budget}
+                value={form.contract_value}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, budget: e.target.value }))
+                  setForm((f) => ({ ...f, contract_value: e.target.value }))
                 }
                 placeholder="500000"
                 disabled={isSubmitting}
               />
-              {errors.budget && (
-                <p className="text-xs text-red-500 mt-1">{errors.budget}</p>
+              {errors.contract_value && (
+                <p className="text-xs text-red-500 mt-1">
+                  {errors.contract_value}
+                </p>
               )}
             </div>
           </div>
@@ -358,31 +400,33 @@ export function CreateProjectDialog({
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
+            {/* start_date */}
             <div>
               <Label htmlFor="cpd-start">Start Date *</Label>
               <Input
                 id="cpd-start"
                 data-ocid="project.startdate.input"
                 type="date"
-                value={form.startDate}
+                value={form.start_date}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, startDate: e.target.value }))
+                  setForm((f) => ({ ...f, start_date: e.target.value }))
                 }
                 disabled={isSubmitting}
               />
-              {errors.startDate && (
-                <p className="text-xs text-red-500 mt-1">{errors.startDate}</p>
+              {errors.start_date && (
+                <p className="text-xs text-red-500 mt-1">{errors.start_date}</p>
               )}
             </div>
+            {/* end_date */}
             <div>
               <Label htmlFor="cpd-end">End Date</Label>
               <Input
                 id="cpd-end"
                 data-ocid="project.enddate.input"
                 type="date"
-                value={form.endDate}
+                value={form.end_date}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, endDate: e.target.value }))
+                  setForm((f) => ({ ...f, end_date: e.target.value }))
                 }
                 disabled={isSubmitting}
               />
@@ -395,20 +439,20 @@ export function CreateProjectDialog({
                 id="cpd-duration"
                 data-ocid="project.duration.input"
                 type="number"
-                min="0"
-                value={form.estimatedDurationDays}
+                min="1"
+                value={form.estimated_duration_days}
                 onChange={(e) =>
                   setForm((f) => ({
                     ...f,
-                    estimatedDurationDays: e.target.value,
+                    estimated_duration_days: e.target.value,
                   }))
                 }
                 placeholder="e.g. 180"
                 disabled={isSubmitting}
               />
-              {errors.estimatedDurationDays && (
+              {errors.estimated_duration_days && (
                 <p className="text-xs text-red-500 mt-1">
-                  {errors.estimatedDurationDays}
+                  {errors.estimated_duration_days}
                 </p>
               )}
             </div>
@@ -420,11 +464,11 @@ export function CreateProjectDialog({
                 type="number"
                 min="0"
                 max="100"
-                value={form.currentProgressPercentage}
+                value={form.current_progress}
                 onChange={(e) =>
                   setForm((f) => ({
                     ...f,
-                    currentProgressPercentage: e.target.value,
+                    current_progress: e.target.value,
                   }))
                 }
                 placeholder="0"
@@ -448,7 +492,7 @@ export function CreateProjectDialog({
             disabled={isSubmitting}
           >
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            {isSubmitting ? "Creating..." : "Create Project"}
+            {isSubmitting ? "Saving..." : "Create Project"}
           </Button>
         </DialogFooter>
       </DialogContent>

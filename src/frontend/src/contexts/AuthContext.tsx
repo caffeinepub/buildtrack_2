@@ -91,12 +91,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       !actorFetching
     ) {
       prevIdentityRef.current = principalStr;
+      // Bootstrap: make this user admin if no admin exists yet
+      actor
+        .bootstrapAdmin()
+        .then((becameAdmin) => {
+          if (becameAdmin) {
+            qc.invalidateQueries({ queryKey: ["auth"] });
+          }
+        })
+        .catch(() => {});
       actor.recordLogin().catch(() => {});
     }
     if (!principalStr) {
       prevIdentityRef.current = null;
     }
-  }, [identity, actor, actorFetching]);
+  }, [identity, actor, actorFetching, qc]);
 
   const refreshUser = useCallback(() => {
     qc.invalidateQueries({ queryKey: ["auth"] });

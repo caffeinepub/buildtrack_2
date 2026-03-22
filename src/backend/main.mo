@@ -334,6 +334,16 @@ actor {
 
   include MixinAuthorization(accessControlState);
 
+  // Helper: check if caller has user-level OR admin-level access
+  func requireUserOrAdmin(caller : Principal) {
+    if (
+      not AccessControl.hasPermission(accessControlState, caller, #user) and
+      not AccessControl.isAdmin(accessControlState, caller)
+    ) {
+      Runtime.trap("Unauthorized: Only users can perform this action");
+    };
+  };
+
   // Helper function to check if user is approved (admins bypass approval)
   func requireApprovedUser(caller : Principal) {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
@@ -362,6 +372,13 @@ actor {
       Runtime.trap("Unauthorized: Only admins can perform this action");
     };
     UserApproval.setApproval(approvalState, user, status);
+    // When approving, also grant the #user role so permission checks pass
+    switch (status) {
+      case (#approved) {
+        accessControlState.userRoles.add(user, #user);
+      };
+      case (_) {};
+    };
   };
 
   public query ({ caller }) func listApprovals() : async [UserApproval.UserApprovalInfo] {
@@ -371,20 +388,32 @@ actor {
     UserApproval.listApprovals(approvalState);
   };
 
-  /// Trivial invite admin function (TO REMOVE) (admin guard)
-  // public shared ({ caller }) func inviteAdmin(_ : Principal) : async () {
-  //   if (not AccessControl.isAdmin(caller, state)) {
-  //     Runtime.trap("Unauthorized: Only admins can invite admins");
-  //   };
-  //   state.inviteAdmin(principal);
-  // };
+  /// Bootstrap: makes the caller Admin if no admin has been assigned yet.
+  /// adminAssigned is reset on every upgrade so the first user to log in
+  /// after each new deployment automatically becomes Admin.
+  /// The admin also receives the #user role so all write permission checks pass.
+  public shared ({ caller }) func bootstrapAdmin() : async Bool {
+    if (caller.isAnonymous()) {
+      return false;
+    };
+    if (not accessControlState.adminAssigned) {
+      // Grant both #admin and #user roles so all permission checks pass
+      accessControlState.userRoles.add(caller, #admin);
+      accessControlState.userRoles.add(caller, #user);
+      accessControlState.adminAssigned := true;
+      // Also approve them so they bypass the approval gate
+      UserApproval.setApproval(approvalState, caller, #approved);
+      return true;
+    };
+    false
+  };
 
   /// --- User Active Tracking ---
 
-  // Active user tracking - requires authentication but not approval (login/logout are basic auth features)
+  // Active user tracking - allow any non-anonymous caller (users may not have a role yet when logging in)
   public shared ({ caller }) func recordLogin() : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Authentication required");
+    if (caller.isAnonymous()) {
+      Runtime.trap("Unauthorized: Anonymous calls not permitted");
     };
     let currentTime = Time.now();
     userLoginStatuses.add(
@@ -397,7 +426,8 @@ actor {
   };
 
   public shared ({ caller }) func recordLogout() : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user)) and
+        not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: Authentication required");
     };
     switch (userLoginStatuses.get(caller)) {
@@ -428,9 +458,7 @@ actor {
   /// --- User Profiles ---
 
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access profiles");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     userProfiles.get(caller);
   };
@@ -446,9 +474,7 @@ actor {
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     userProfiles.add(caller, profile);
   };
@@ -457,25 +483,19 @@ actor {
 
   // Projects - Admin and approved users can write, approved users can read
   public query ({ caller }) func getProjects() : async [Project] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view projects");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     projectsStoreV2.values().toArray();
   };
 
   public query ({ caller }) func getProjectById(id : Nat) : async ?Project {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view projects");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     projectsStoreV2.get(id);
   };
 
   public shared ({ caller }) func createProject(project : Project) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create projects");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let projectId = nextProjectId;
@@ -503,9 +523,7 @@ actor {
   };
 
   public shared ({ caller }) func updateProject(id : Nat, updatedProject : Project) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update projects");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let existingProject = switch (projectsStoreV2.get(id)) {
@@ -532,11 +550,8 @@ actor {
 
   /// --- Daily Site Reports ---
 
-  // Daily Site Reports - approved users can write and read
   public query ({ caller }) func getReportsByProject(projectId : Nat) : async [DailySiteReport] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view reports");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     reports.values().toArray().filter(
       func(r) { r.projectId == projectId }
@@ -544,9 +559,7 @@ actor {
   };
 
   public shared ({ caller }) func createReport(report : DailySiteReport) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can create reports");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let reportId = nextReportId;
@@ -568,9 +581,7 @@ actor {
   };
 
   public shared ({ caller }) func updateReport(report : DailySiteReport) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update reports");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     switch (reports.get(report.id)) {
@@ -596,11 +607,8 @@ actor {
 
   /// --- Materials ---
 
-  // Materials - approved users can write and read
   public query ({ caller }) func getMaterialsByProject(projectId : Nat) : async [Material] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view materials");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     materials.values().toArray().filter(
       func(m) { m.projectId == projectId }
@@ -608,9 +616,7 @@ actor {
   };
 
   public shared ({ caller }) func addMaterial(material : Material) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add materials");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let materialId = nextMaterialId;
@@ -631,9 +637,7 @@ actor {
   };
 
   public shared ({ caller }) func updateMaterial(material : Material) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update materials");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     switch (materials.get(material.id)) {
@@ -659,11 +663,8 @@ actor {
 
   /// --- BOQ Items ---
 
-  // BOQ Items - approved users can write and read
   public query ({ caller }) func getBoqItemsByProject(projectId : Nat) : async [BoqItem] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view BOQ items");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     boqItems.values().toArray().filter(
       func(b) { b.projectId == projectId }
@@ -671,9 +672,7 @@ actor {
   };
 
   public shared ({ caller }) func addBOQItem(item : BoqItem) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add BOQ items");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let itemId = nextBoqItemId;
@@ -695,9 +694,7 @@ actor {
   };
 
   public shared ({ caller }) func updateBOQItem(item : BoqItem) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update BOQ items");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     switch (boqItems.get(item.id)) {
@@ -723,11 +720,8 @@ actor {
 
   /// --- Labour ---
 
-  // Labour - approved users can write and read
   public query ({ caller }) func getLabourByProject(projectId : Nat) : async [Labour] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view labour entries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     labourEntries.values().toArray().filter(
       func(l) { l.projectId == projectId }
@@ -735,9 +729,7 @@ actor {
   };
 
   public shared ({ caller }) func addLabour(labour : Labour) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add labour entries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let labourId = nextLabourId;
@@ -757,9 +749,7 @@ actor {
   };
 
   public shared ({ caller }) func updateLabour(labour : Labour) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update labour entries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     switch (labourEntries.get(labour.id)) {
@@ -785,11 +775,8 @@ actor {
 
   /// --- Cost Entries ---
 
-  // Cost Entries - approved users can write and read
   public query ({ caller }) func getCostEntriesByProject(projectId : Nat) : async [CostEntry] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view cost entries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     costs.values().toArray().filter(
       func(c) { c.projectId == projectId }
@@ -797,9 +784,7 @@ actor {
   };
 
   public shared ({ caller }) func addCostEntry(cost : CostEntry) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add cost entries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let costId = nextCostId;
@@ -819,9 +804,7 @@ actor {
   };
 
   public shared ({ caller }) func updateCostEntry(cost : CostEntry) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can update cost entries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     switch (costs.get(cost.id)) {
@@ -847,7 +830,6 @@ actor {
 
   /// --- Dashboard Stats ---
 
-  // Dashboard Stats - Read access for approved users
   public query ({ caller }) func getDashboardStats() : async {
     planningCount : Nat;
     activeCount : Nat;
@@ -859,9 +841,7 @@ actor {
     totalBudget : Float;
     totalSpent : Float;
   } {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view dashboard stats");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let allProjects = projectsStoreV2.values().toArray();
@@ -914,7 +894,6 @@ actor {
 
   /// --- Project Cost Summaries ---
 
-  // New Cost Summary Type
   type ProjectCostSummary = {
     projectId : Nat;
     projectName : Text;
@@ -927,11 +906,8 @@ actor {
     status : ProjectStatus;
   };
 
-  // New query to get project cost summary by projectId
   public query ({ caller }) func getProjectCostSummary(projectId : Nat) : async ?ProjectCostSummary {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view cost summaries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let project = switch (projectsStoreV2.get(projectId)) {
@@ -970,11 +946,8 @@ actor {
     };
   };
 
-  // New query to get cost summaries for all projects
   public query ({ caller }) func getAllProjectCostSummaries() : async [ProjectCostSummary] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view cost summaries");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     projectsStoreV2.map<Nat, Project, ProjectCostSummary>(
@@ -1014,22 +987,16 @@ actor {
 
   /// --- Project Photos (by project or report) ---
 
-  // New query to get photos by project id
   public query ({ caller }) func getProjectPhotosByProject(projectId : Nat) : async [ProjectPhoto] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view project photos");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
     projectPhotos.values().toArray().filter(
       func(p) { p.projectId == projectId }
     );
   };
 
-  // New function to add photo
   public shared ({ caller }) func addProjectPhoto(photo : ProjectPhoto) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can add project photos");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     let photoId = nextPhotoId;
@@ -1048,12 +1015,8 @@ actor {
     photoId;
   };
 
-  /// Deletes a project photo by id
-  /// #user permission required (any authenticated user)
   public shared ({ caller }) func deleteProjectPhoto(id : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: User authentication required");
-    };
+    requireUserOrAdmin(caller);
     requireApprovedUser(caller);
 
     switch (projectPhotos.get(id)) {
@@ -1064,8 +1027,13 @@ actor {
     };
   };
 
-  /// --- Migration: pre-v19 (ProjectLegacy) and v19-v28 (ProjectV1 without updatedAt) -> Project (with updatedAt) ---
+  /// --- Migration & postupgrade ---
   system func postupgrade() {
+    // KEY FIX: Reset adminAssigned on every upgrade so the first user to log in
+    // after this deployment automatically becomes Admin via bootstrapAdmin().
+    // This ensures the current logged-in user is always granted Admin on new versions.
+    accessControlState.adminAssigned := false;
+
     // Step 1: Migrate very old pre-v19 projects (ProjectLegacy) -> projectsStoreV2
     for (old in projects.values()) {
       switch (projectsStoreV2.get(old.id)) {
@@ -1111,7 +1079,7 @@ actor {
             estimatedDurationDays = v1.estimatedDurationDays;
             currentProgressPercentage = v1.currentProgressPercentage;
             createdAt = v1.createdAt;
-            updatedAt = v1.createdAt; // use createdAt as initial updatedAt
+            updatedAt = v1.createdAt;
           });
           if (v1.id >= nextProjectId) {
             nextProjectId := v1.id + 1;

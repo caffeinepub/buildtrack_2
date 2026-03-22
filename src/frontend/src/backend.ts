@@ -173,6 +173,7 @@ export interface Project {
     clientName: string;
     name: string;
     createdAt: Time;
+    updatedAt: Time;
     description: string;
     currentProgressPercentage: number;
     stage: ProjectStage;
@@ -299,6 +300,7 @@ export interface backendInterface {
      * / Trivial invite admin function (TO REMOVE) (admin guard)
      * / --- User Active Tracking ---
      */
+    bootstrapAdmin(): Promise<boolean>;
     recordLogin(): Promise<void>;
     recordLogout(): Promise<void>;
     requestApproval(): Promise<void>;
@@ -884,6 +886,20 @@ export class Backend implements backendInterface {
             return from_candid_vec_n38(this._uploadFile, this._downloadFile, result);
         }
     }
+    async bootstrapAdmin(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.bootstrapAdmin();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error('unreachable');
+            }
+        } else {
+            const result = await this.actor.bootstrapAdmin();
+            return result;
+        }
+    }
     async recordLogin(): Promise<void> {
         if (this.processError) {
             try {
@@ -1125,6 +1141,7 @@ function from_candid_record_n29(_uploadFile: (file: ExternalBlob) => Promise<Uin
     clientName: string;
     name: string;
     createdAt: _Time;
+    updatedAt: _Time;
     description: string;
     currentProgressPercentage: number;
     stage: _ProjectStage;
@@ -1139,6 +1156,7 @@ function from_candid_record_n29(_uploadFile: (file: ExternalBlob) => Promise<Uin
     clientName: string;
     name: string;
     createdAt: Time;
+    updatedAt: Time;
     description: string;
     currentProgressPercentage: number;
     stage: ProjectStage;
@@ -1154,6 +1172,7 @@ function from_candid_record_n29(_uploadFile: (file: ExternalBlob) => Promise<Uin
         clientName: value.clientName,
         name: value.name,
         createdAt: value.createdAt,
+        updatedAt: value.updatedAt,
         description: value.description,
         currentProgressPercentage: value.currentProgressPercentage,
         stage: from_candid_ProjectStage_n30(_uploadFile, _downloadFile, value.stage),
@@ -1299,6 +1318,7 @@ function to_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     clientName: string;
     name: string;
     createdAt: Time;
+    updatedAt: Time;
     description: string;
     currentProgressPercentage: number;
     stage: ProjectStage;
@@ -1313,6 +1333,7 @@ function to_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8
     clientName: string;
     name: string;
     createdAt: _Time;
+    updatedAt: _Time;
     description: string;
     currentProgressPercentage: number;
     stage: _ProjectStage;
@@ -1328,6 +1349,7 @@ function to_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8
         clientName: value.clientName,
         name: value.name,
         createdAt: value.createdAt,
+        updatedAt: value.updatedAt,
         description: value.description,
         currentProgressPercentage: value.currentProgressPercentage,
         stage: to_candid_ProjectStage_n17(_uploadFile, _downloadFile, value.stage),

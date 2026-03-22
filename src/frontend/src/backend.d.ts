@@ -207,6 +207,7 @@ export interface backendInterface {
      * / Trivial invite admin function (TO REMOVE) (admin guard)
      * / --- User Active Tracking ---
      */
+    bootstrapAdmin(): Promise<boolean>;
     recordLogin(): Promise<void>;
     recordLogout(): Promise<void>;
     requestApproval(): Promise<void>;

@@ -33,6 +33,7 @@ import {
   nowNs,
   nsToDateInput,
 } from "../lib/appUtils";
+import type { TypedProject } from "../lib/projectTypes";
 import {
   TIMELINE_STATUS_CLASSES,
   TIMELINE_STATUS_LABELS,
@@ -569,9 +570,9 @@ export default function Projects() {
                       <div className="text-xs text-muted-foreground/70 mt-2 border-t border-border/40 pt-2">
                         Modified:{" "}
                         {formatLastModified(
-                          (project as any).updatedAt &&
-                            (project as any).updatedAt > 0n
-                            ? (project as any).updatedAt
+                          (project as TypedProject).updatedAt &&
+                            (project as TypedProject).updatedAt > 0n
+                            ? (project as TypedProject).updatedAt
                             : project.createdAt,
                         )}
                       </div>

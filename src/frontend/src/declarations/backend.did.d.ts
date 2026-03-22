@@ -67,6 +67,7 @@ export interface Project {
   'clientName' : string,
   'name' : string,
   'createdAt' : Time,
+  'updatedAt' : Time,
   'description' : string,
   'currentProgressPercentage' : number,
   'stage' : ProjectStage,
@@ -145,6 +146,7 @@ export interface _SERVICE {
   'addMaterial' : ActorMethod<[Material], bigint>,
   'addProjectPhoto' : ActorMethod<[ProjectPhoto], bigint>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'bootstrapAdmin' : ActorMethod<[], boolean>,
   'createProject' : ActorMethod<[Project], bigint>,
   'createReport' : ActorMethod<[DailySiteReport], bigint>,
   'deleteBOQItem' : ActorMethod<[bigint], undefined>,
@@ -152,30 +154,14 @@ export interface _SERVICE {
   'deleteLabour' : ActorMethod<[bigint], undefined>,
   'deleteMaterial' : ActorMethod<[bigint], undefined>,
   'deleteProject' : ActorMethod<[bigint], undefined>,
-  /**
-   * / Deletes a project photo by id
-   * / #user permission required (any authenticated user)
-   */
   'deleteProjectPhoto' : ActorMethod<[bigint], undefined>,
   'deleteReport' : ActorMethod<[bigint], undefined>,
   'getActiveUsers' : ActorMethod<[], Array<Principal>>,
   'getAllProjectCostSummaries' : ActorMethod<[], Array<ProjectCostSummary>>,
-  /**
-   * / --- BOQ Items ---
-   */
   'getBoqItemsByProject' : ActorMethod<[bigint], Array<BoqItem>>,
-  /**
-   * / --- User Profiles ---
-   */
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
-  /**
-   * / --- Cost Entries ---
-   */
   'getCostEntriesByProject' : ActorMethod<[bigint], Array<CostEntry>>,
-  /**
-   * / --- Dashboard Stats ---
-   */
   'getDashboardStats' : ActorMethod<
     [],
     {
@@ -190,39 +176,17 @@ export interface _SERVICE {
       'finishingCount' : bigint,
     }
   >,
-  /**
-   * / --- Labour ---
-   */
   'getLabourByProject' : ActorMethod<[bigint], Array<Labour>>,
-  /**
-   * / --- Materials ---
-   */
   'getMaterialsByProject' : ActorMethod<[bigint], Array<Material>>,
   'getProjectById' : ActorMethod<[bigint], [] | [Project]>,
   'getProjectCostSummary' : ActorMethod<[bigint], [] | [ProjectCostSummary]>,
-  /**
-   * / --- Project Photos (by project or report) ---
-   */
   'getProjectPhotosByProject' : ActorMethod<[bigint], Array<ProjectPhoto>>,
-  /**
-   * / --- Projects ---
-   */
   'getProjects' : ActorMethod<[], Array<Project>>,
-  /**
-   * / --- Daily Site Reports ---
-   */
   'getReportsByProject' : ActorMethod<[bigint], Array<DailySiteReport>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
-  /**
-   * / --- Approval System (admin guard required) ---
-   */
   'isCallerApproved' : ActorMethod<[], boolean>,
   'listApprovals' : ActorMethod<[], Array<UserApprovalInfo>>,
-  /**
-   * / Trivial invite admin function (TO REMOVE) (admin guard)
-   * / --- User Active Tracking ---
-   */
   'recordLogin' : ActorMethod<[], undefined>,
   'recordLogout' : ActorMethod<[], undefined>,
   'requestApproval' : ActorMethod<[], undefined>,

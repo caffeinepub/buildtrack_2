@@ -258,8 +258,11 @@ export default function ProjectDetail() {
             <span>Last modified:</span>
             <span>
               {formatLastModified(
-                (project as any).updatedAt && (project as any).updatedAt > 0n
-                  ? (project as any).updatedAt
+                (project as typeof project & { updatedAt: bigint }).updatedAt &&
+                  (project as typeof project & { updatedAt: bigint })
+                    .updatedAt > 0n
+                  ? (project as typeof project & { updatedAt: bigint })
+                      .updatedAt
                   : project.createdAt,
                 true,
               )}
