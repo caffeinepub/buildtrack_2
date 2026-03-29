@@ -47,7 +47,7 @@ export default function SplashScreen({ onDone }: SplashScreenProps) {
           >
             {/* Logo */}
             <motion.img
-              src="/assets/uploads/11111logo-1.png"
+              src="/assets/uploads/11111logo-019d3aee-b013-75c5-ac84-61964c899068-1.png"
               alt="MBCL Logo"
               className="w-64 h-auto object-contain drop-shadow-2xl"
               initial={{ scale: 0.9, opacity: 0 }}

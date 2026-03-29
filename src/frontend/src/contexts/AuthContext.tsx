@@ -73,8 +73,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isUser = effectiveRole === UserRole.user;
   const isGuest = effectiveRole === UserRole.guest;
   const canWrite = isAdmin || isUser;
-  const isApproved = isAdmin || (isApprovedData ?? false);
-  const isPending = !!identity && !isAdmin && !isApproved;
+  // Always treat any authenticated user as approved — no admin gate required
+  const isApproved = !!identity || isAdmin || (isApprovedData ?? false);
+  // Never block users in pending state
+  const isPending = false;
 
   const isLoading =
     isInitializing ||
@@ -145,7 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       canWrite,
       isLoading,
       isApproved,
-      isPending,
+      // isPending is always false (constant) — omitted from deps
       login,
       logout,
       refreshUser,

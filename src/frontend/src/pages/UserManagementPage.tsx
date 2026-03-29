@@ -172,7 +172,11 @@ function AdminView() {
           : status === ApprovalStatus.rejected
             ? "rejected"
             : "updated";
-      toast.success(`User ${label} successfully`);
+      toast.success(
+        status === ApprovalStatus.approved
+          ? "User approved — they now have full write access"
+          : `User ${label} successfully`,
+      );
       qc.invalidateQueries({ queryKey: ["approvals"] });
       qc.invalidateQueries({ queryKey: ["active-users"] });
     },

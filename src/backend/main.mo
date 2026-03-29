@@ -282,8 +282,14 @@ actor {
     expiresAt : Time.Time;
   };
 
+  // V1 UserProfile (pre-email) -- kept for stable migration
+  type UserProfileV1 = {
+    name : Text;
+  };
+
   type UserProfile = {
     name : Text;
+    email : Text;
   };
 
   type UserLoginStatus = {
@@ -308,7 +314,10 @@ actor {
   let labourEntries = Map.empty<Nat, Labour>();
   let projectPhotos = Map.empty<Nat, ProjectPhoto>();
 
-  let userProfiles = Map.empty<Principal, UserProfile>();
+  // V1 stable map absorbs old data on upgrade
+  let userProfiles = Map.empty<Principal, UserProfileV1>();
+  // V2 map holds the new UserProfile type with email
+  let userProfilesV2 = Map.empty<Principal, UserProfile>();
   let userLoginStatuses = Map.empty<Principal, UserLoginStatus>();
 
   // Dropped (but still needed for migration) persistent user maps
@@ -460,7 +469,7 @@ actor {
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     requireUserOrAdmin(caller);
     requireApprovedUser(caller);
-    userProfiles.get(caller);
+    userProfilesV2.get(caller);
   };
 
   public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
@@ -470,13 +479,13 @@ actor {
     if (not AccessControl.isAdmin(accessControlState, caller)) {
       requireApprovedUser(caller);
     };
-    userProfiles.get(user);
+    userProfilesV2.get(user);
   };
 
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
     requireUserOrAdmin(caller);
     requireApprovedUser(caller);
-    userProfiles.add(caller, profile);
+    userProfilesV2.add(caller, profile);
   };
 
   /// --- Projects ---
@@ -1061,6 +1070,16 @@ actor {
         case _ {};
       };
     };
+    // Step 0: Migrate userProfiles V1 (no email) -> userProfilesV2 (with email)
+    for ((principal, v1) in userProfiles.toArray().vals()) {
+      switch (userProfilesV2.get(principal)) {
+        case null {
+          userProfilesV2.add(principal, { name = v1.name; email = "" });
+        };
+        case _ {};
+      };
+    };
+
     // Step 2: Migrate v19-v28 projects (ProjectV1, no updatedAt) -> projectsStoreV2
     for (v1 in projectsStore.values()) {
       switch (projectsStoreV2.get(v1.id)) {

@@ -14,6 +14,14 @@ export default function SetupPage() {
   const { actor } = useActor();
   const navigate = useNavigate();
   const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [errors, setErrors] = useState<{ name?: string; email?: string }>({});
+
+  // Pre-fill email from login page if available
+  useEffect(() => {
+    const pending = localStorage.getItem("mbcl_pending_email");
+    if (pending) setEmail(pending);
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !identity) {
@@ -21,18 +29,38 @@ export default function SetupPage() {
     }
   }, [isLoading, identity, navigate]);
 
+  function validate() {
+    const errs: { name?: string; email?: string } = {};
+    if (!fullName.trim()) errs.name = "Full name is required.";
+    if (!email.trim()) {
+      errs.email = "Email address is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      errs.email = "Please enter a valid email address.";
+    }
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!actor) throw new Error("Not connected");
-      await actor.saveCallerUserProfile({ name: fullName.trim() });
+      await actor.saveCallerUserProfile({
+        name: fullName.trim(),
+        email: email.trim(),
+      });
     },
     onSuccess: () => {
+      localStorage.removeItem("mbcl_pending_email");
       refreshUser();
       toast.success("Profile saved! Welcome to MBCL BuildTrack.");
       navigate({ to: "/" });
     },
     onError: () => toast.error("Failed to save profile. Please try again."),
   });
+
+  function handleSubmit() {
+    if (validate()) saveMutation.mutate();
+  }
 
   return (
     <div
@@ -57,7 +85,7 @@ export default function SetupPage() {
       >
         <div className="text-center mb-8">
           <img
-            src="/assets/uploads/11111logo.png"
+            src="/assets/uploads/11111logo-019d3aee-b013-75c5-ac84-61964c899068-1.png"
             alt="MBCL"
             className="w-20 h-auto mx-auto mb-4 object-contain"
           />
@@ -65,7 +93,7 @@ export default function SetupPage() {
             Complete Your Profile
           </h1>
           <p className="text-blue-200/60 text-sm mt-1">
-            Enter your name to get started
+            Enter your details to get started
           </p>
         </div>
 
@@ -86,25 +114,51 @@ export default function SetupPage() {
               </Label>
               <Input
                 id="full-name"
-                data-ocid="setup.input"
+                data-ocid="setup.name_input"
                 value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                onChange={(e) => {
+                  setFullName(e.target.value);
+                  if (errors.name)
+                    setErrors((p) => ({ ...p, name: undefined }));
+                }}
                 placeholder="e.g. John Mwanza"
                 className="bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-amber-400"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter" && fullName.trim())
-                    saveMutation.mutate();
+                  if (e.key === "Enter") handleSubmit();
                 }}
               />
+              {errors.name && (
+                <p className="text-red-400 text-xs mt-1">{errors.name}</p>
+              )}
             </div>
 
-            <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <p className="text-amber-300/80 text-xs">
-                You are signed in as:{" "}
-                <span className="font-mono text-amber-400">
-                  {identity?.getPrincipal().toString().slice(0, 12)}...
-                </span>
-              </p>
+            <div>
+              <Label
+                htmlFor="setup-email"
+                className="text-blue-200/80 text-sm mb-1.5 block"
+              >
+                Email Address *
+              </Label>
+              <Input
+                id="setup-email"
+                data-ocid="setup.email_input"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (errors.email)
+                    setErrors((p) => ({ ...p, email: undefined }));
+                }}
+                placeholder="you@example.com"
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-amber-400"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSubmit();
+                }}
+                autoComplete="email"
+              />
+              {errors.email && (
+                <p className="text-red-400 text-xs mt-1">{errors.email}</p>
+              )}
             </div>
 
             <Button
@@ -115,8 +169,8 @@ export default function SetupPage() {
                 color: "#0a1628",
                 border: "none",
               }}
-              onClick={() => saveMutation.mutate()}
-              disabled={!fullName.trim() || saveMutation.isPending}
+              onClick={handleSubmit}
+              disabled={saveMutation.isPending}
             >
               {saveMutation.isPending ? "Saving..." : "Continue to Dashboard"}
             </Button>

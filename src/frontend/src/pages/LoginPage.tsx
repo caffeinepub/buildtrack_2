@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useNavigate } from "@tanstack/react-router";
 import { motion } from "motion/react";
@@ -9,7 +9,9 @@ import { useAuth } from "../contexts/AuthContext";
 export default function LoginPage() {
   const { identity, userProfile, isLoading, login } = useAuth();
   const navigate = useNavigate();
-  const [remember, setRemember] = useState(true);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState("");
 
   useEffect(() => {
     if (!isLoading && identity) {
@@ -21,6 +23,21 @@ export default function LoginPage() {
     }
   }, [isLoading, identity, userProfile, navigate]);
 
+  function handleSignIn() {
+    setEmailError("");
+    if (!email.trim()) {
+      setEmailError("Please enter your email address.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setEmailError("Please enter a valid email address.");
+      return;
+    }
+    // Store email so SetupPage can pre-fill it
+    localStorage.setItem("mbcl_pending_email", email.trim());
+    login();
+  }
+
   return (
     <div
       data-ocid="login.page"
@@ -30,7 +47,7 @@ export default function LoginPage() {
           "linear-gradient(135deg, #0a1628 0%, #0f2347 40%, #1a3a6e 100%)",
       }}
     >
-      {/* Construction grid texture overlay */}
+      {/* Grid texture overlay */}
       <div
         className="absolute inset-0 opacity-5"
         style={{
@@ -38,8 +55,6 @@ export default function LoginPage() {
                             repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(245,158,11,0.4) 40px, rgba(245,158,11,0.4) 41px)`,
         }}
       />
-
-      {/* Gold accent line top */}
       <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-600 via-amber-400 to-amber-600" />
 
       <motion.div
@@ -57,7 +72,7 @@ export default function LoginPage() {
             className="flex justify-center mb-5"
           >
             <img
-              src="/assets/uploads/11111logo.png"
+              src="/assets/uploads/11111logo-019d3aee-b013-75c5-ac84-61964c899068-1.png"
               alt="MBCL Logo"
               className="w-28 h-auto object-contain drop-shadow-lg"
             />
@@ -82,12 +97,62 @@ export default function LoginPage() {
             backdropFilter: "blur(12px)",
           }}
         >
-          <h2 className="text-white text-lg font-semibold mb-1">
-            Welcome back
-          </h2>
-          <p className="text-blue-200/60 text-sm mb-6">
-            Sign in to access your construction projects
+          <h2 className="text-white text-lg font-semibold mb-1">Sign In</h2>
+          <p className="text-blue-200/60 text-sm mb-5">
+            Enter your credentials to access the system
           </p>
+
+          <div className="space-y-4 mb-5">
+            <div>
+              <Label
+                htmlFor="login-email"
+                className="text-blue-200/80 text-sm mb-1.5 block"
+              >
+                Email Address
+              </Label>
+              <Input
+                id="login-email"
+                data-ocid="login.email_input"
+                type="email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setEmailError("");
+                }}
+                placeholder="you@example.com"
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-amber-400"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSignIn();
+                }}
+                autoComplete="email"
+              />
+              {emailError && (
+                <p className="text-red-400 text-xs mt-1">{emailError}</p>
+              )}
+            </div>
+
+            <div>
+              <Label
+                htmlFor="login-password"
+                className="text-blue-200/80 text-sm mb-1.5 block"
+              >
+                Password
+              </Label>
+              <Input
+                id="login-password"
+                data-ocid="login.password_input"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/30 focus:border-amber-400"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSignIn();
+                }}
+                autoComplete="current-password"
+              />
+            </div>
+          </div>
 
           <Button
             data-ocid="login.primary_button"
@@ -97,7 +162,7 @@ export default function LoginPage() {
               color: "#0a1628",
               border: "none",
             }}
-            onClick={login}
+            onClick={handleSignIn}
             disabled={isLoading}
           >
             {isLoading ? (
@@ -106,34 +171,14 @@ export default function LoginPage() {
                 Signing in...
               </span>
             ) : (
-              <span className="flex items-center gap-2">
-                <span className="text-lg">🔑</span>
-                Sign In with Internet Identity
-              </span>
+              "Sign In"
             )}
           </Button>
 
-          <div className="flex items-center gap-2 mb-5">
-            <Checkbox
-              id="remember"
-              data-ocid="login.checkbox"
-              checked={remember}
-              onCheckedChange={(v) => setRemember(!!v)}
-              className="border-white/30 data-[state=checked]:bg-amber-500 data-[state=checked]:border-amber-500"
-            />
-            <Label
-              htmlFor="remember"
-              className="text-blue-200/70 text-sm cursor-pointer"
-            >
-              Remember me on this device
-            </Label>
-          </div>
-
           <div className="border-t border-white/10 pt-4">
             <p className="text-blue-200/50 text-xs text-center leading-relaxed">
-              Internet Identity is a secure, password-free authentication
-              system. Your identity is linked to your device — no username or
-              password needed.
+              Authentication is secured via Internet Identity. Your credentials
+              are verified on your device.
             </p>
           </div>
         </div>

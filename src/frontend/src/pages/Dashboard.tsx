@@ -92,7 +92,7 @@ const STAGE_ACCENT_COLORS: Record<ProjectStage, string> = {
 
 export default function Dashboard() {
   const { actor } = useActor();
-  const { isAdmin } = useAuth();
+  const { isAdmin, canWrite } = useAuth();
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: approvals } = useQuery({
@@ -266,12 +266,19 @@ export default function Dashboard() {
             Overview of all your construction projects
           </p>
         </div>
-        <Button
-          data-ocid="dashboard.new_project.button"
-          onClick={() => setShowCreate(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" /> New Project
-        </Button>
+        {canWrite ? (
+          <Button
+            data-ocid="dashboard.new_project.button"
+            onClick={() => setShowCreate(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" /> New Project
+          </Button>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border px-3 py-2 rounded-md">
+            <span>🔒</span>
+            <span>Contact your admin to get edit access</span>
+          </div>
+        )}
       </div>
 
       {/* Stats */}

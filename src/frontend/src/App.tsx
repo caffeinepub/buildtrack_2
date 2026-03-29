@@ -26,7 +26,6 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { useActor } from "./hooks/useActor";
 import Dashboard from "./pages/Dashboard";
 import LoginPage from "./pages/LoginPage";
-import PendingApprovalPage from "./pages/PendingApprovalPage";
 import ProjectDetail from "./pages/ProjectDetail";
 import Projects from "./pages/Projects";
 import SetupPage from "./pages/SetupPage";
@@ -125,7 +124,7 @@ function Nav({ onClose }: { onClose?: () => void }) {
       {/* Brand header */}
       <div className="flex flex-col items-center gap-1 px-3 py-4 border-b border-sidebar-border">
         <img
-          src="/assets/uploads/11111logo-1-1.png"
+          src="/assets/uploads/11111logo-019d3aee-b013-75c5-ac84-61964c899068-1.png"
           alt="MBCL Logo"
           className="w-24 h-auto object-contain"
         />
@@ -215,6 +214,11 @@ function Nav({ onClose }: { onClose?: () => void }) {
                 <p className="text-xs font-medium text-sidebar-foreground truncate">
                   {userProfile?.name ?? "Anonymous"}
                 </p>
+                {userProfile?.email && (
+                  <p className="text-[10px] text-sidebar-foreground/50 truncate">
+                    {userProfile.email}
+                  </p>
+                )}
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${roleInfo.className}`}
                 >
@@ -250,18 +254,12 @@ function Nav({ onClose }: { onClose?: () => void }) {
 
 function RootLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { identity, userProfile, userRole, isPending, isLoading, logout } =
-    useAuth();
+  const { identity, userProfile, userRole, isLoading, logout } = useAuth();
   const roleInfo = ROLE_BADGE[userRole] ?? ROLE_BADGE.guest;
 
-  // If user is authenticated but pending approval, show blocking page
-  if (!isLoading && isPending) {
-    return (
-      <div className="min-h-screen">
-        <PendingApprovalPage />
-        <Toaster />
-      </div>
-    );
+  // isLoading guard — render nothing until auth state resolves
+  if (isLoading && !identity) {
+    return null;
   }
 
   return (

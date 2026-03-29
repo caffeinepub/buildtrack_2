@@ -183,6 +183,7 @@ export interface Project {
 }
 export interface UserProfile {
     name: string;
+    email: string;
 }
 export interface _CaffeineStorageRefillResult {
     success?: boolean;
