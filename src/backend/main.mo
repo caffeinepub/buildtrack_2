@@ -424,6 +424,15 @@ actor {
     if (caller.isAnonymous()) {
       Runtime.trap("Unauthorized: Anonymous calls not permitted");
     };
+    // Auto-grant #user role and approval to anyone who logs in (open access mode)
+    if (not AccessControl.hasPermission(accessControlState, caller, #user) and
+        not AccessControl.isAdmin(accessControlState, caller)) {
+      accessControlState.userRoles.add(caller, #user);
+    };
+    if (not UserApproval.isApproved(approvalState, caller) and
+        not AccessControl.isAdmin(accessControlState, caller)) {
+      UserApproval.setApproval(approvalState, caller, #approved);
+    };
     let currentTime = Time.now();
     userLoginStatuses.add(
       caller,
